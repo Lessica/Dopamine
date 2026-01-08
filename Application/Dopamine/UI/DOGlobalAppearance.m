@@ -13,7 +13,7 @@
 
 + (UIImageSymbolConfiguration *)smallIconImageConfiguration
 {
-    return [UIImageSymbolConfiguration configurationWithPointSize: 14 weight:UIImageSymbolWeightMedium];
+    return [UIImageSymbolConfiguration configurationWithPointSize:14 weight:UIImageSymbolWeightMedium];
 }
 
 + (UIButtonConfiguration *)defaultButtonConfiguration

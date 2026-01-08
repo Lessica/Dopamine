@@ -34,6 +34,10 @@ int main(int argc, char * argv[]) {
             [[DOEnvironmentManager sharedManager] reboot];
             return 0;
         }
+        if (!strcmp(argv[1], "reboot")) {
+            reboot(0);
+            return 0;
+        }
     }
     
     // If systemhook isn't loaded and we are already jailbroken, we need to do the checkin ourselves

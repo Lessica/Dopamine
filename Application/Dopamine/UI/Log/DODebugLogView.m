@@ -52,7 +52,7 @@
     }];
 }
 
--(void)didComplete
+-(void)didCompleteWithMessage:(NSString *)message
 {
 
 }

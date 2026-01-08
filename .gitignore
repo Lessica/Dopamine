@@ -14,6 +14,7 @@ Exploits/kfd/kfd.framework/kfd
 cmake-build-*
 .vscode
 jbupdate.sh
-
+*.tipa
 BaseBin/jbupdate.sh
 BaseBin/opainject
+trustcache/

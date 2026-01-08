@@ -671,6 +671,9 @@ int exec_cmd_roothide_spawn(pid_t* pidp, const char* path, const posix_spawn_fil
     } else if(argc==3 && strcmp(argv[1],"trollstore")==0 && strcmp(argv[2],"delete-bootstrap")==0) {
         // skip patching for trollstore bootstrap delete
         need_patch_child = false;
+    } else if(argc==2 && strcmp(argv[1],"reboot")==0) {
+        // skip patching for reboot command
+        need_patch_child = false;
     }
 
     if(need_patch_child && !dyld_patch_enabled()) {

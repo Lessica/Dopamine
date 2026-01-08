@@ -248,7 +248,7 @@
             /**************************** roothide specfic *********************************/
             NSString* namedesc = DOLocalizedString(@"Enable dyld patch");
             if(envManager.isArm64e && NSProcessInfo.processInfo.operatingSystemVersion.majorVersion==15) {
-                namedesc = DOLocalizedString(@"Dyld Patch(Spinlock Fix)");
+                namedesc = DOLocalizedString(@"Dyld Patch (Spinlock Fix)");
             }
             PSSpecifier *dyldPatchSpecifier = [PSSpecifier preferenceSpecifierNamed:namedesc target:self set:@selector(setDyldPatchEnabled:specifier:) get:@selector(readDyldPatchEnabled:) detail:nil cell:PSSwitchCell edit:nil];
             [dyldPatchSpecifier setProperty:@YES forKey:@"enabled"];
@@ -789,7 +789,8 @@
     UIAlertAction *rebootAction = [UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Reboot")
                                                              style:UIAlertActionStyleDestructive
                                                            handler:^(UIAlertAction * _Nonnull action) {
-        exec_cmd_root(JBROOT_PATH("/sbin/reboot"), NULL);
+        NSString *executablePath = [[NSBundle mainBundle] executablePath];
+        exec_cmd_root(executablePath.UTF8String, "reboot", NULL);
     }];
     
     [alert addAction:cancelAction];

@@ -8,6 +8,7 @@
 "Button_Jailbreak_Title" = "Jailbreak";
 "Status_Title_Jailbroken" = "Jailbroken";
 "Unsupported" = "Unsupported";
+"AutoJailbreak_Preparing_Format" = "Preparing to jailbreak\u2026 %ld";
 
 // Action Menu
 "Menu_Settings_Title" = "Settings";

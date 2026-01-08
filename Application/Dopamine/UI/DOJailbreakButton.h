@@ -27,6 +27,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)initWithAction:(UIAction *)actions;
 - (void)expandButton:(NSArray<NSLayoutConstraint *> *)constraints;
 
+/// Updates the title line shown while jailbreaking (the label above the log view).
+/// If called before the title is created, the value will be applied once it appears.
+- (void)setJailbreakingTitleText:(NSString *)text;
+
 - (void)lockMutex;
 - (void)unlockMutex;
 

@@ -594,7 +594,7 @@ int reboot3(uint64_t flags, ...);
             return kernelInApp;
         }
         
-        [[DOUIManager sharedInstance] sendLog:@"Downloading Kernel" debug:NO];
+        [[DOUIManager sharedInstance] sendLog:DOLocalizedString(@"Downloading Kernel") debug:NO];
         NSString *kernelcachePath = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/kernelcache"];
         if (![[NSFileManager defaultManager] fileExistsAtPath:kernelcachePath]) {
             if (grab_kernelcache(kernelcachePath) == false) return nil;

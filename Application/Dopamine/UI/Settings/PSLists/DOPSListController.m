@@ -19,6 +19,8 @@
     
     [_table setSeparatorColor:[UIColor clearColor]];
     [_table setBackgroundColor:[UIColor clearColor]];
+    _table.showsVerticalScrollIndicator = NO;
+    _table.showsHorizontalScrollIndicator = NO;
     [DOPSListController setupViewControllerStyle:self];
 }
 

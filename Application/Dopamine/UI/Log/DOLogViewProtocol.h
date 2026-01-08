@@ -12,7 +12,7 @@ NS_ASSUME_NONNULL_BEGIN
 @protocol DOLogViewProtocol <NSObject>
 
 -(void)showLog:(NSString *)log;
--(void)didComplete;
+-(void)didCompleteWithMessage:(NSString *)message;
 
 @optional
 - (void)updateLog:(NSString *)log;

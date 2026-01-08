@@ -11,6 +11,11 @@
 #import "DOGlobalAppearance.h"
 #import "DOThemeManager.h"
 
+@interface DOJailbreakButton ()
+@property (nonatomic, strong, nullable) UILabel *jailbreakingTitleLabel;
+@property (nonatomic, copy, nullable) NSString *pendingJailbreakingTitleText;
+@end
+
 @implementation DOJailbreakButton
 
 - (instancetype)initWithAction:(UIAction *)actions
@@ -146,12 +151,14 @@
 
     UILabel *titleLabel = [[UILabel alloc] init];
     titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    titleLabel.text = DOLocalizedString(@"Status_Title_Jailbreaking");
+    titleLabel.text = self.pendingJailbreakingTitleText ?: DOLocalizedString(@"Status_Title_Jailbreaking");
     titleLabel.textColor = [UIColor whiteColor];
-    titleLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightRegular];
+    titleLabel.font = [UIFont monospacedDigitSystemFontOfSize:18 weight:UIFontWeightRegular];
     titleLabel.textAlignment = NSTextAlignmentCenter;
     titleLabel.alpha = 0.0;
     [self addSubview:titleLabel];
+
+    self.jailbreakingTitleLabel = titleLabel;
 
     [NSLayoutConstraint activateConstraints:@[
         [titleLabel.centerXAnchor constraintEqualToAnchor:window.centerXAnchor constant:20],
@@ -172,6 +179,21 @@
         [indicator.widthAnchor constraintEqualToConstant:30],
         [indicator.heightAnchor constraintEqualToConstant:12],
     ]];
+}
+
+- (void)setJailbreakingTitleText:(NSString *)text
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self setJailbreakingTitleText:text];
+        });
+        return;
+    }
+
+    self.pendingJailbreakingTitleText = text;
+    if (self.jailbreakingTitleLabel) {
+        self.jailbreakingTitleLabel.text = text;
+    }
 }
 
 - (void)setEnabled:(BOOL)enabled

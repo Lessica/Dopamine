@@ -22,6 +22,7 @@
 {
     DOActionMenuButton *button = [DOActionMenuButton buttonWithConfiguration:[DOGlobalAppearance defaultButtonConfiguration] primaryAction:action];
     [button.titleLabel setAdjustsFontSizeToFitWidth:YES];
+    [button.titleLabel setFont:[UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightRegular]];
     [button setContentHorizontalAlignment:UIControlContentHorizontalAlignmentLeft];
 
     if ([DOGlobalAppearance isRTL])

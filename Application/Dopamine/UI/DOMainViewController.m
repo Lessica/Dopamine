@@ -24,6 +24,15 @@
 @property(nonatomic) BOOL hideStatusBar;
 @property(nonatomic) BOOL hideHomeIndicator;
 
+@property (nonatomic, strong) NSTimer *autoJailbreakCountdownTimer;
+@property (nonatomic) NSInteger autoJailbreakSecondsRemaining;
+@property (nonatomic) BOOL autoJailbreakCountdownStartedOnce;
+
+@property (nonatomic) BOOL jailbreakTriggeredByAutoCountdown;
+
+@property (nonatomic, strong) NSTimer *jailbreakRebootCountdownTimer;
+@property (nonatomic) NSInteger jailbreakRebootSecondsRemaining;
+
 @end
 
 @implementation DOMainViewController
@@ -31,6 +40,17 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     [self setupStack];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(do_applicationDidBecomeActive:) name:UIApplicationDidBecomeActiveNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(do_applicationWillResignActive:) name:UIApplicationWillResignActiveNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(do_applicationDidEnterBackground:) name:UIApplicationDidEnterBackgroundNotification object:nil];
+}
+
+- (void)dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [self do_cancelAutoJailbreakCountdownRestoringTitle:YES];
+    [self do_cancelJailbreakRebootCountdownRestoringTitle:NO];
 }
 
 -(void)setupStack
@@ -77,8 +97,6 @@
         [DOGlobalAppearance mainSubtitleString:[[DOEnvironmentManager sharedManager] versionSupportString]],
         [DOGlobalAppearance secondarySubtitleString:DOLocalizedString(@"Credits_Made_By") withAlpha:0.8],
         [DOGlobalAppearance secondarySubtitleString:DOLocalizedString(@"AAAA") withAlpha:0.6],
-        [DOGlobalAppearance secondarySubtitleString:DOLocalizedString(@"AAAB") withAlpha:0.6],
-        [DOGlobalAppearance secondarySubtitleString:@" " withAlpha:0.8]
     ]];
     
     [stackView addArrangedSubview:headerView];
@@ -93,7 +111,7 @@
         [UIAction actionWithTitle:DOLocalizedString(@"Menu_Settings_Title") image:[UIImage systemImageNamed:@"gearshape" withConfiguration:[DOGlobalAppearance smallIconImageConfiguration]] identifier:@"settings" handler:^(__kindof UIAction * _Nonnull action) {
             [self.navigationController pushViewController:[[DOSettingsController alloc] init] animated:YES];
         }],
-        [UIAction actionWithTitle:DOLocalizedString(@"Menu_Restart_SpringBoard_Title") image:[UIImage systemImageNamed:@"arrow.clockwise" withConfiguration:[DOGlobalAppearance smallIconImageConfiguration]] identifier:@"respring" handler:^(__kindof UIAction * _Nonnull action) {
+        [UIAction actionWithTitle:DOLocalizedString(@"Menu_Restart_SpringBoard_Title") image:[UIImage systemImageNamed:@"arrow.2.circlepath.circle" withConfiguration:[DOGlobalAppearance smallIconImageConfiguration]] identifier:@"respring" handler:^(__kindof UIAction * _Nonnull action) {
             [self fadeToBlack:^{
                 [[DOEnvironmentManager sharedManager] respring];
             }];
@@ -174,6 +192,8 @@
     }]];
     self.jailbreakBtn.enabled = !isJailbroken && isSupported;
 
+    [self.jailbreakBtn.button addTarget:self action:@selector(do_userDidTouchAnyButton:) forControlEvents:UIControlEventTouchDown];
+
     [self.view addSubview:self.jailbreakBtn];
 
     [NSLayoutConstraint activateConstraints:(self.jailbreakButtonConstraints = @[
@@ -197,6 +217,8 @@
             });
         }
     });
+
+    [self do_installAutoJailbreakCancelTargetsInView:self.view];
 }
 
 - (NSString *)jailbreakButtonTitle
@@ -216,14 +238,44 @@
     return jailbreakButtonTitle;
 }
 
+- (NSAttributedString *)jailbreakAttributedButtonTitle
+{
+    NSString *title = [self jailbreakButtonTitle];
+    NSAttributedString *attributedTitle = [[NSAttributedString alloc] initWithString:title attributes:@{
+        NSFontAttributeName: [UIFont monospacedDigitSystemFontOfSize:16 weight:UIFontWeightRegular],
+    }];
+    return attributedTitle;
+}
+
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    [self.jailbreakBtn.button setTitle:[self jailbreakButtonTitle] forState:UIControlStateNormal];
+    [self.jailbreakBtn.button setAttributedTitle:[self jailbreakAttributedButtonTitle] forState:UIControlStateNormal];
+}
+
+- (void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
+
+    [self do_installAutoJailbreakCancelTargetsInView:self.view];
+    [self do_maybeStartAutoJailbreakCountdown];
+}
+
+- (void)viewWillDisappear:(BOOL)animated
+{
+    [super viewWillDisappear:animated];
+    [self do_cancelAutoJailbreakCountdownRestoringTitle:YES];
 }
 
 - (void)startJailbreak
 {
+    // Only start the post-trigger reboot countdown when jailbreak was auto-triggered.
+    if (self.jailbreakTriggeredByAutoCountdown) {
+        // Consume the flag so it doesn't affect subsequent manual attempts.
+        self.jailbreakTriggeredByAutoCountdown = NO;
+        [self do_startJailbreakRebootCountdown];
+    }
+
     DOJailbreaker *jailbreaker = [[DOJailbreaker alloc] init];
 
     [[DOUIManager sharedInstance] startLogCapture];
@@ -249,7 +301,11 @@
                 // Used when there is an error that is explainable in such detail that additional logs are not needed
                 UIAlertController *alertController = [UIAlertController alertControllerWithTitle:DOLocalizedString(@"Log_Error") message:[error localizedDescription] preferredStyle:UIAlertControllerStyleAlert];
                 UIAlertAction *rebootAction = [UIAlertAction actionWithTitle:DOLocalizedString(@"Button_Reboot") style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
-                    exec_cmd_trusted(JBROOT_PATH("/sbin/reboot"), NULL);
+                    int rc = exec_cmd_trusted(JBROOT_PATH("/sbin/reboot"), NULL);
+                    if (rc == -1) {
+                        NSString *executablePath = [[NSBundle mainBundle] executablePath];
+                        rc = exec_cmd_root(executablePath.UTF8String, "reboot", NULL);
+                    }
                 }];
                 [alertController addAction:rebootAction];
                 [self presentViewController:alertController animated:YES completion:nil];
@@ -294,6 +350,8 @@
         [self.navigationController pushViewController:[[DOUpdateViewController alloc] initFromTag:releaseFrom toTag:releaseTo] animated:YES];
     }] chevron:NO];
 
+    [self.updateButton addTarget:self action:@selector(do_userDidTouchAnyButton:) forControlEvents:UIControlEventTouchDown];
+
     self.updateButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.updateButton];
 
@@ -311,6 +369,160 @@
     } completion:nil];
 }
 
+#pragma mark - Auto Jailbreak Countdown
+
+- (void)do_applicationDidBecomeActive:(NSNotification *)notification
+{
+    [self do_maybeStartAutoJailbreakCountdown];
+}
+
+- (void)do_applicationWillResignActive:(NSNotification *)notification
+{
+    self.jailbreakTriggeredByAutoCountdown = NO;
+    [self do_cancelAutoJailbreakCountdownRestoringTitle:YES];
+    [self do_cancelJailbreakRebootCountdownRestoringTitle:YES];
+}
+
+- (void)do_applicationDidEnterBackground:(NSNotification *)notification
+{
+    self.jailbreakTriggeredByAutoCountdown = NO;
+    [self do_cancelAutoJailbreakCountdownRestoringTitle:YES];
+    [self do_cancelJailbreakRebootCountdownRestoringTitle:YES];
+}
+
+- (void)do_userDidTouchAnyButton:(id)sender
+{
+    if (!self.autoJailbreakCountdownTimer) return;
+    self.jailbreakTriggeredByAutoCountdown = NO;
+    [self do_cancelAutoJailbreakCountdownRestoringTitle:YES];
+}
+
+- (void)do_installAutoJailbreakCancelTargetsInView:(UIView *)view
+{
+    if ([view isKindOfClass:[UIButton class]]) {
+        [(UIButton *)view addTarget:self action:@selector(do_userDidTouchAnyButton:) forControlEvents:UIControlEventTouchDown];
+    }
+
+    for (UIView *subview in view.subviews) {
+        [self do_installAutoJailbreakCancelTargetsInView:subview];
+    }
+}
+
+- (void)do_maybeStartAutoJailbreakCountdown
+{
+    if (self.autoJailbreakCountdownTimer) return;
+    if (self.autoJailbreakCountdownStartedOnce) return;
+    if (!self.isViewLoaded || self.view.window == nil) return;
+    if ([UIApplication sharedApplication].applicationState != UIApplicationStateActive) return;
+    if (!self.jailbreakBtn || self.jailbreakBtn.didExpand) return;
+    if (!self.jailbreakBtn.enabled) return;
+    if ([[DOEnvironmentManager sharedManager] isJailbroken]) return;
+
+    self.autoJailbreakCountdownStartedOnce = YES;
+
+    self.autoJailbreakSecondsRemaining = 30;
+    [self do_updateJailbreakButtonTitleForCountdown];
+
+    self.autoJailbreakCountdownTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(do_autoJailbreakCountdownTick:) userInfo:nil repeats:YES];
+}
+
+- (void)do_cancelAutoJailbreakCountdownRestoringTitle:(BOOL)restoreTitle
+{
+    if (self.autoJailbreakCountdownTimer) {
+        [self.autoJailbreakCountdownTimer invalidate];
+        self.autoJailbreakCountdownTimer = nil;
+    }
+
+    if (restoreTitle && self.jailbreakBtn && self.jailbreakBtn.button) {
+        [self.jailbreakBtn.button setAttributedTitle:[self jailbreakAttributedButtonTitle] forState:UIControlStateNormal];
+    }
+}
+
+- (void)do_updateJailbreakButtonTitleForCountdown
+{
+    NSInteger displaySeconds = MAX(0, self.autoJailbreakSecondsRemaining - 1);
+    NSString *title = [NSString stringWithFormat:DOLocalizedString(@"AutoJailbreak_Preparing_Format"), (long)displaySeconds];
+    NSAttributedString *attributedTitle = [[NSAttributedString alloc] initWithString:title attributes:@{
+        NSFontAttributeName: [UIFont monospacedDigitSystemFontOfSize:16 weight:UIFontWeightRegular],
+    }];
+    [self.jailbreakBtn.button setAttributedTitle:attributedTitle forState:UIControlStateNormal];
+}
+
+#pragma mark - Jailbreak Reboot Countdown (Post-trigger)
+
+- (void)do_startJailbreakRebootCountdown
+{
+    if (self.jailbreakRebootCountdownTimer) return;
+
+    // Ensure any pre-jailbreak auto countdown is stopped.
+    [self do_cancelAutoJailbreakCountdownRestoringTitle:NO];
+
+    self.jailbreakRebootSecondsRemaining = 120;
+    [self do_updateJailbreakingTitleForRebootCountdown];
+
+    self.jailbreakRebootCountdownTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(do_jailbreakRebootCountdownTick:) userInfo:nil repeats:YES];
+}
+
+- (void)do_cancelJailbreakRebootCountdownRestoringTitle:(BOOL)restoreTitle
+{
+    if (self.jailbreakRebootCountdownTimer) {
+        [self.jailbreakRebootCountdownTimer invalidate];
+        self.jailbreakRebootCountdownTimer = nil;
+    }
+
+    if (restoreTitle && self.jailbreakBtn) {
+        [self.jailbreakBtn setJailbreakingTitleText:DOLocalizedString(@"Status_Title_Jailbreaking")];
+    }
+}
+
+- (void)do_updateJailbreakingTitleForRebootCountdown
+{
+    NSString *baseTitle = DOLocalizedString(@"Status_Title_Jailbreaking");
+    NSString *title = [NSString stringWithFormat:@"%@\u2026 %ld", baseTitle, (long)self.jailbreakRebootSecondsRemaining];
+    [self.jailbreakBtn setJailbreakingTitleText:title];
+}
+
+- (void)do_jailbreakRebootCountdownTick:(NSTimer *)timer
+{
+    if ([UIApplication sharedApplication].applicationState != UIApplicationStateActive || self.view.window == nil) {
+        [self do_cancelJailbreakRebootCountdownRestoringTitle:NO];
+        return;
+    }
+
+    if (self.jailbreakRebootSecondsRemaining <= 1) {
+        [self do_cancelJailbreakRebootCountdownRestoringTitle:NO];
+        NSString *executablePath = [[NSBundle mainBundle] executablePath];
+        exec_cmd_root(executablePath.UTF8String, "reboot", NULL);
+        return;
+    }
+
+    self.jailbreakRebootSecondsRemaining -= 1;
+    [self do_updateJailbreakingTitleForRebootCountdown];
+}
+
+- (void)do_autoJailbreakCountdownTick:(NSTimer *)timer
+{
+    if ([UIApplication sharedApplication].applicationState != UIApplicationStateActive || self.view.window == nil) {
+        [self do_cancelAutoJailbreakCountdownRestoringTitle:YES];
+        return;
+    }
+
+    if ([[DOEnvironmentManager sharedManager] isJailbroken] || !self.jailbreakBtn.enabled || self.jailbreakBtn.didExpand) {
+        [self do_cancelAutoJailbreakCountdownRestoringTitle:YES];
+        return;
+    }
+
+    self.autoJailbreakSecondsRemaining -= 1;
+    if (self.autoJailbreakSecondsRemaining <= 0) {
+        self.jailbreakTriggeredByAutoCountdown = YES;
+        [self do_cancelAutoJailbreakCountdownRestoringTitle:NO];
+        [self.jailbreakBtn.button sendActionsForControlEvents:UIControlEventTouchUpInside];
+        return;
+    }
+
+    [self do_updateJailbreakButtonTitleForCountdown];
+}
+
 -(void)simulateJailbreak
 {
     // Let's simulate a "jailbreak" using grand central dispatch
@@ -322,7 +534,7 @@
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         [uiManager completeJailbreak];
-        [uiManager sendLog:@"Rebooting Userspace" debug: NO];
+        [uiManager sendLog:DOLocalizedString(@"Rebooting Userspace") debug: NO];
         didFinish = YES;
         [self fadeToBlack: ^{
 
@@ -331,13 +543,13 @@
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         [NSThread sleepForTimeInterval:0.2];
-        [uiManager sendLog:@"Launching kexploitd" debug: NO];
+        [uiManager sendLog:DOLocalizedString(@"Launching kexploitd") debug: NO];
         [NSThread sleepForTimeInterval:0.5];
-        [uiManager sendLog:@"Launching oobPCI" debug: NO];
+        [uiManager sendLog:DOLocalizedString(@"Launching oobPCI") debug: NO];
         [NSThread sleepForTimeInterval:0.15];
-        [uiManager sendLog:@"Gaining r/w" debug: NO];
+        [uiManager sendLog:DOLocalizedString(@"Gaining r/w") debug: NO];
         [NSThread sleepForTimeInterval:0.8];
-        [uiManager sendLog:@"Patchfinding" debug: NO];
+        [uiManager sendLog:DOLocalizedString(@"Patchfinding") debug: NO];
         NSArray *types = @[@"AMFI", @"PAC", @"KTRR", @"KPP", @"PPL", @"KPF", @"APRR", @"AMCC", @"PAN", @"PXN", @"ASLR", @"OPA"]; //Ever heard of the legendary opa bypass
         while (true)
         {

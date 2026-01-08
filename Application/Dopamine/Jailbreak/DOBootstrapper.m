@@ -953,7 +953,7 @@ int getCFMajorVersion(void)
 
 -(int) InstallBootstrap:(NSString*)installPath WithCompletion:(void (^)(NSError *))completion
 {
-    [[DOUIManager sharedInstance] sendLog:@"Extracting Bootstrap" debug:NO];
+    [[DOUIManager sharedInstance] sendLog:DOLocalizedString(@"Extracting Bootstrap") debug:NO];
 
     NSFileManager* fm = NSFileManager.defaultManager;
     
@@ -1026,7 +1026,7 @@ int getCFMajorVersion(void)
 
 -(int) ReRandomizeBootstrap:(void (^)(NSError *))completion
 {
-    [[DOUIManager sharedInstance] sendLog:@"ReRandomizing Bootstrap" debug:NO];
+    [[DOUIManager sharedInstance] sendLog:DOLocalizedString(@"Re-randomizing Bootstrap") debug:NO];
     
     uint64_t new_jbrand = jbrand_new();
     uint64_t prev_jbrand = jbrand_current();
@@ -1207,7 +1207,7 @@ int getCFMajorVersion(void)
         //update jailbreakInfo.rootPath and jailbreakInfo.jbrand
         [[DOEnvironmentManager sharedManager] locateJailbreakRoot];
         
-        [[DOUIManager sharedInstance] sendLog:@"Updating BaseBin" debug:NO];
+        [[DOUIManager sharedInstance] sendLog:DOLocalizedString(@"Updating BaseBin") debug:NO];
         
         NSError* error=nil;
         if ([[NSFileManager defaultManager] fileExistsAtPath:jbrootPrefix(@"/basebin")]) {
@@ -1268,7 +1268,7 @@ int getCFMajorVersion(void)
 {
     // Initial setup on first jailbreak
     if ([[NSFileManager defaultManager] fileExistsAtPath:jbrootPrefix(@"/prep_bootstrap.sh")]) {
-        [[DOUIManager sharedInstance] sendLog:@"Finalizing Bootstrap" debug:NO];
+        [[DOUIManager sharedInstance] sendLog:DOLocalizedString(@"Finalizing Bootstrap") debug:NO];
         int r = exec_cmd_trusted(JBROOT_PATH("/bin/sh"), "/prep_bootstrap.sh", NULL);
         if (r != 0) {
             return [NSError errorWithDomain:bootstrapErrorDomain code:BootstrapErrorCodeFailedFinalising userInfo:@{NSLocalizedDescriptionKey : [NSString stringWithFormat:@"prep_bootstrap.sh returned %d\n", r]}];
@@ -1292,7 +1292,7 @@ int getCFMajorVersion(void)
     }
     else
     {
-        [[DOUIManager sharedInstance] sendLog:@"Updating Symlinks" debug:NO];
+        [[DOUIManager sharedInstance] sendLog:DOLocalizedString(@"Updating Symlinks") debug:NO];
         [self fixBootstrapSymlink:@"/bin/sh"];
         [self fixBootstrapSymlink:@"/usr/bin/sh"];
         int r = exec_cmd_trusted(JBROOT_PATH("/bin/sh"), "/usr/libexec/updatelinks.sh", NULL);
@@ -1305,7 +1305,7 @@ int getCFMajorVersion(void)
     BOOL shouldInstallBasebinLink = [self shouldInstallPackage:@"dopamine-basebin-link"];
     
     if (shouldInstallLibkrw || shouldInstallBasebinLink) {
-        [[DOUIManager sharedInstance] sendLog:@"Updating Bundled Packages" debug:NO];
+        [[DOUIManager sharedInstance] sendLog:DOLocalizedString(@"Updating Bundled Packages") debug:NO];
         
         if (shouldInstallLibkrw) {
             NSString *libkrwPath = [[NSBundle mainBundle].bundlePath stringByAppendingPathComponent:@"libkrw-dopamine.deb"];

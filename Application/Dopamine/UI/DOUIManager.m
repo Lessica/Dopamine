@@ -307,7 +307,7 @@
     if (!self.logView)
         return;
 
-    [self.logView didComplete];
+    [self.logView didCompleteWithMessage:DOLocalizedString(@"Done")];
 }
 
 - (void)observeFileDescriptor:(int)fd withCallback:(void (^)(char *line))callbackBlock

@@ -40,6 +40,7 @@
     
     self.scrollView = [[UIScrollView alloc] init];
     self.scrollView.showsHorizontalScrollIndicator = NO;
+    self.scrollView.showsVerticalScrollIndicator = NO;
     self.scrollView.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.scrollView];
 
@@ -65,6 +66,8 @@
     ]];
 
     self.license.editable = NO;
+    self.license.showsVerticalScrollIndicator = NO;
+    self.license.showsHorizontalScrollIndicator = NO;
     self.license.font = [UIFont systemFontOfSize:14];
     self.license.textColor = [UIColor whiteColor];
     self.license.backgroundColor = [UIColor clearColor];

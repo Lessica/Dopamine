@@ -87,16 +87,16 @@
     lastItemView.label.text = log;
 }
 
-- (void)didComplete
+- (void)didCompleteWithMessage:(NSString *)message
 {
     if (![NSThread isMainThread]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self didComplete];
+            [self didCompleteWithMessage:message];
         });
         return;
     }
 
-    [self showLog:@"Done"];
+    [self showLog:message];
     [self.stackView.arrangedSubviews makeObjectsPerformSelector:@selector(setSuccess)];
 }
 
