@@ -41,7 +41,10 @@ else
   git clone https://github.com/CRKatri/trustcache
   pushd trustcache >/dev/null
 
-  gmake OPENSSL=1
+  gmake OPENSSL=1 \
+  CFLAGS="-I$(brew --prefix openssl)/include" \
+  LDFLAGS="-L$(brew --prefix openssl)/lib" \
+  PKG_CONFIG_PATH="$(brew --prefix openssl)/lib/pkgconfig"
 
   # build.yml installs to /opt/procursus/bin, but avoid sudo prompts locally.
   if [ -d /opt/procursus/bin ] && [ -w /opt/procursus/bin ]; then
