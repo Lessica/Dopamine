@@ -110,18 +110,6 @@ fi
 
 echo "Using THEOS=$THEOS"
 
-echo "== Pre Bundleid =="
-sed -i '' "s/com.opa334.Dopamine-roothide/${BUNDLEID}/g" ./Application/Dopamine/Jailbreak/DOPreferenceManager.m
-sed -i '' "s/com.opa334.Dopamine-roothide/${BUNDLEID}/g" ./Application/Dopamine.xcodeproj/project.pbxproj
-sed -i '' "s/com.opa334.Dopamine-roothide/${BUNDLEID}/g" ./BaseBin/jbctl/src/main.m
-
-echo "== Pre code =="
-sed -i '' "s/AAAA/v${newVERSION} (WhiteList)/g" ./Application/Dopamine/UI/DOMainViewController.m
-sed -i '' "s/AAAB/不要为了升级而放弃越狱的乐趣~/g" ./Application/Dopamine/UI/DOMainViewController.m
-sed -i '' "s/AAAB/不要为了升级而放弃越狱的乐趣~/g" ./Application/Dopamine/UI/DOMainViewController.m
-sed -i '' "s/roothide\/Dopamine2-roothide/w2599\/Dopamine\/tree\/rh2.x_modify/g" ./Application/Dopamine/UI/Settings/DOCreditsViewController.m
-sed -i '' "s/roothide\/Dopamine2-roothide/w2599\/Dopamine/g" ./Application/Dopamine/UI/Update/DOUpdateViewController.m
-
 echo "== Build tipa =="
 export THEOS
 

@@ -93,10 +93,12 @@
     }
 
     //Header
+    NSString *shortVer = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"];
+    NSString *versionStr = [NSString stringWithFormat:@"%@ (Whitelist)", shortVer];
     DOHeaderView *headerView = [[DOHeaderView alloc] initWithImage: [UIImage imageNamed:@"Dopamine"] subtitles: @[
         [DOGlobalAppearance mainSubtitleString:[[DOEnvironmentManager sharedManager] versionSupportString]],
         [DOGlobalAppearance secondarySubtitleString:DOLocalizedString(@"Credits_Made_By") withAlpha:0.8],
-        [DOGlobalAppearance secondarySubtitleString:DOLocalizedString(@"AAAA") withAlpha:0.6],
+        [DOGlobalAppearance secondarySubtitleString:versionStr withAlpha:0.8],
     ]];
     
     [stackView addArrangedSubview:headerView];
