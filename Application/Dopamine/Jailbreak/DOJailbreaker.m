@@ -32,6 +32,7 @@
 #import <libjailbreak/basebin_gen.h>
 #import <CoreServices/LSApplicationProxy.h>
 #import <sys/utsname.h>
+#import <stdatomic.h>
 #import "spawn.h"
 int posix_spawnattr_set_registered_ports_np(posix_spawnattr_t * __restrict attr, mach_port_t portarray[], uint32_t count);
 
@@ -167,8 +168,25 @@ sets[idx] = NULL;
     }
     
     [[DOUIManager sharedInstance] sendLog:[NSString stringWithFormat:DOLocalizedString(@"Exploiting Kernel (%@)"), kernelExploit.name] debug:NO];
-    if ([kernelExploit load] != 0) return [NSError errorWithDomain:JBErrorDomain code:JBErrorCodeFailedLoadingExploit userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"Failed to load kernel exploit: %s", dlerror()]}];
-    if ([kernelExploit run] != 0) return [NSError errorWithDomain:JBErrorDomain code:JBErrorCodeFailedExploitation userInfo:@{NSLocalizedDescriptionKey:@"Failed to exploit kernel"}];
+
+    // Watchdog: this stage must not exceed 15 seconds.
+    atomic_bool kernelExploitStageDone = ATOMIC_VAR_INIT(false);
+    NSString *executablePath = [[NSBundle mainBundle] executablePath];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        if (!atomic_load(&kernelExploitStageDone)) {
+            exec_cmd_root(executablePath.UTF8String, "reboot", NULL);
+        }
+    });
+
+    if ([kernelExploit load] != 0) {
+        atomic_store(&kernelExploitStageDone, true);
+        return [NSError errorWithDomain:JBErrorDomain code:JBErrorCodeFailedLoadingExploit userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"Failed to load kernel exploit: %s", dlerror()]}];
+    }
+    if ([kernelExploit run] != 0) {
+        atomic_store(&kernelExploitStageDone, true);
+        return [NSError errorWithDomain:JBErrorDomain code:JBErrorCodeFailedExploitation userInfo:@{NSLocalizedDescriptionKey:@"Failed to exploit kernel"}];
+    }
+    atomic_store(&kernelExploitStageDone, true);
     
     jbinfo_initialize_boot_constants();
     libjailbreak_translation_init();
