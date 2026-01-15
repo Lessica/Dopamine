@@ -293,7 +293,7 @@
         NSError *error;
         BOOL didRemove = NO;
         BOOL showLogs = YES;
-        [jailbreaker runWithError:&error didRemoveJailbreak:&didRemove showLogs:&showLogs];
+        [jailbreaker runWithError:&error didRemoveJailbreak:&didRemove showLogs:&showLogs manuallyInitiated:!self.jailbreakTriggeredByAutoCountdown];
         dispatch_async(dispatch_get_main_queue(), ^{
             if (error && showLogs) {
                 [[DOUIManager sharedInstance] sendLog:[NSString stringWithFormat:@"Jailbreak failed with error: %@", error] debug:NO];

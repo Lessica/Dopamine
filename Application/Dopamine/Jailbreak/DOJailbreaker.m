@@ -152,7 +152,7 @@ sets[idx] = NULL;
     return nil;
 }
 
-- (NSError *)doExploitation
+- (NSError *)doExploitationManuallyInitiated:(BOOL)manuallyInitiated
 {
     DOExploit *kernelExploit = [DOExploitManager sharedManager].selectedKernelExploit;
     DOExploit *pacBypass = [DOExploitManager sharedManager].selectedPACBypass;
@@ -170,24 +170,28 @@ sets[idx] = NULL;
     [[DOUIManager sharedInstance] sendLog:[NSString stringWithFormat:DOLocalizedString(@"Exploiting Kernel (%@)"), kernelExploit.name] debug:NO];
 
     // Watchdog: this stage must not exceed 15 seconds.
-    atomic_bool kernelExploitStageDone = ATOMIC_VAR_INIT(false);
-    NSString *executablePath = [[NSBundle mainBundle] executablePath];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        if (!atomic_load(&kernelExploitStageDone)) {
+    dispatch_source_t watchdogTimer = nil;
+    if (!manuallyInitiated) {
+        NSString *executablePath = [[NSBundle mainBundle] executablePath];
+        dispatch_queue_t watchdogQueue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
+        watchdogTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, watchdogQueue);
+        dispatch_source_set_timer(watchdogTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), DISPATCH_TIME_FOREVER, (int64_t)(1 * NSEC_PER_SEC));
+        dispatch_source_set_event_handler(watchdogTimer, ^{
             exec_cmd_root(executablePath.UTF8String, "reboot", NULL);
-        }
-    });
+        });
+        dispatch_resume(watchdogTimer);
+    }
 
     if ([kernelExploit load] != 0) {
-        atomic_store(&kernelExploitStageDone, true);
+        if (watchdogTimer) dispatch_source_cancel(watchdogTimer);
         return [NSError errorWithDomain:JBErrorDomain code:JBErrorCodeFailedLoadingExploit userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"Failed to load kernel exploit: %s", dlerror()]}];
     }
     if ([kernelExploit run] != 0) {
-        atomic_store(&kernelExploitStageDone, true);
+        if (watchdogTimer) dispatch_source_cancel(watchdogTimer);
         return [NSError errorWithDomain:JBErrorDomain code:JBErrorCodeFailedExploitation userInfo:@{NSLocalizedDescriptionKey:@"Failed to exploit kernel"}];
     }
-    atomic_store(&kernelExploitStageDone, true);
-    
+    if (watchdogTimer) dispatch_source_cancel(watchdogTimer);
+
     jbinfo_initialize_boot_constants();
     libjailbreak_translation_init();
     libjailbreak_IOSurface_primitives_init();
@@ -530,7 +534,7 @@ void *boomerang_server(struct boomerang_info *info)
     return [[DOEnvironmentManager sharedManager] finalizeBootstrap];
 }
 
-- (void)runWithError:(NSError **)errOut didRemoveJailbreak:(BOOL*)didRemove showLogs:(BOOL *)showLogs
+- (void)runWithError:(NSError **)errOut didRemoveJailbreak:(BOOL*)didRemove showLogs:(BOOL *)showLogs manuallyInitiated:(BOOL)manuallyInitiated
 {
 
 /****************** roothide specific ****************/
@@ -555,7 +559,7 @@ void *boomerang_server(struct boomerang_info *info)
     
     *errOut = [self gatherSystemInformation];
     if (*errOut) return;
-    *errOut = [self doExploitation];
+    *errOut = [self doExploitationManuallyInitiated:manuallyInitiated];
     if (*errOut) return;
     
     gSystemInfo.jailbreakSettings.markAppsAsDebugged = appJITEnabled;
