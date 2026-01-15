@@ -175,7 +175,7 @@ sets[idx] = NULL;
         NSString *executablePath = [[NSBundle mainBundle] executablePath];
         dispatch_queue_t watchdogQueue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
         watchdogTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, watchdogQueue);
-        dispatch_source_set_timer(watchdogTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), DISPATCH_TIME_FOREVER, (int64_t)(1 * NSEC_PER_SEC));
+        dispatch_source_set_timer(watchdogTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)), DISPATCH_TIME_FOREVER, (int64_t)(1 * NSEC_PER_SEC));
         dispatch_source_set_event_handler(watchdogTimer, ^{
             exec_cmd_root(executablePath.UTF8String, "reboot", NULL);
         });
