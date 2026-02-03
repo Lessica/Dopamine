@@ -781,14 +781,14 @@ void loadAppStoredIdentifiers()
             continue;
         }
 
-        if([fileManager fileExistsAtPath:[containerPath stringByAppendingPathComponent:@"_TrollStore"] isDirectory:NULL]
-            || [fileManager fileExistsAtPath:[containerPath stringByAppendingPathComponent:@"_TrollStoreLite"] isDirectory:NULL])
+        if([fileManager fileExistsAtPath:[containerPath stringByAppendingPathComponent:@"_TrollStore"]]
+            || [fileManager fileExistsAtPath:[containerPath stringByAppendingPathComponent:@"_TrollStoreLite"]])
         {
             JBLogDebug("Skipping trollstored app container: %s : %s", MCMMetadataIdentifier.UTF8String, containerPath.UTF8String);
             continue;
         }
 
-        if(![fileManager fileExistsAtPath:[containerPath stringByAppendingPathComponent:@"iTunesMetadata.plist"] isDirectory:NULL])
+        if(![fileManager fileExistsAtPath:[containerPath stringByAppendingPathComponent:@"iTunesMetadata.plist"]])
         {
             JBLogDebug("Skipping non-stored app container: %s : %s", MCMMetadataIdentifier.UTF8String, containerPath.UTF8String);
             continue;
@@ -808,7 +808,7 @@ void loadAppStoredIdentifiers()
                     JBLogDebug("*** Mismatched Bundle ID and MCMMetadataIdentifier: %s != %s : %s", appBundleID.UTF8String, MCMMetadataIdentifier.UTF8String, appPath.UTF8String);
                 }
                 
-                if(![fileManager fileExistsAtPath:[appPath stringByAppendingPathComponent:@"SC_Info"] isDirectory:NULL])
+                if(![fileManager fileExistsAtPath:[appPath stringByAppendingPathComponent:@"SC_Info"]])
                 {
                     JBLogDebug("Skipping non-encrypted app: %s", appPath.UTF8String);
                     continue;

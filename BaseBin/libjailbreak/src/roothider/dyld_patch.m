@@ -242,6 +242,19 @@ int loadSinature(int fd, struct mach_header_64* header)
     return -1;
 }
 
+static uint64_t get_symbol(const char* path, const char* name)
+{
+    void *csHandle = dlopen("/System/Library/PrivateFrameworks/CoreSymbolication.framework/CoreSymbolication", RTLD_NOW);
+	CSSymbolicatorRef (*__CSSymbolicatorCreateWithPathAndArchitecture)(const char* path, cpu_type_t type) = dlsym(csHandle, "CSSymbolicatorCreateWithPathAndArchitecture");
+	CSSymbolRef (*__CSSymbolicatorGetSymbolWithMangledNameAtTime)(CSSymbolicatorRef cs, const char* name, uint64_t time) = dlsym(csHandle, "CSSymbolicatorGetSymbolWithMangledNameAtTime");
+	CSRange (*__CSSymbolGetRange)(CSSymbolRef sym) = dlsym(csHandle, "CSSymbolGetRange");
+
+	CSSymbolicatorRef symbolicator = __CSSymbolicatorCreateWithPathAndArchitecture(path, CPU_TYPE_ARM64);
+	CSSymbolRef symbol = __CSSymbolicatorGetSymbolWithMangledNameAtTime(symbolicator, name, 0);
+	CSRange range = __CSSymbolGetRange(symbol);
+    return range.location;
+}
+
 struct DYLDINFO {
     uint64_t entrypoint;
     uint64_t vmSpaceSize;
@@ -263,28 +276,15 @@ struct DYLDINFO* loadDyldInfo(const char* path)
     struct DYLDINFO* result = malloc(sizeof(struct DYLDINFO));
     memset(result, 0, sizeof(struct DYLDINFO));
 
-    void *csHandle = dlopen("/System/Library/PrivateFrameworks/CoreSymbolication.framework/CoreSymbolication", RTLD_NOW);
-	CSSymbolicatorRef (*__CSSymbolicatorCreateWithPathAndArchitecture)(const char* path, cpu_type_t type) = dlsym(csHandle, "CSSymbolicatorCreateWithPathAndArchitecture");
-	CSSymbolRef (*__CSSymbolicatorGetSymbolWithMangledNameAtTime)(CSSymbolicatorRef cs, const char* name, uint64_t time) = dlsym(csHandle, "CSSymbolicatorGetSymbolWithMangledNameAtTime");
-	CSRange (*__CSSymbolGetRange)(CSSymbolRef sym) = dlsym(csHandle, "CSSymbolGetRange");
-
-	CSSymbolicatorRef symbolicator = __CSSymbolicatorCreateWithPathAndArchitecture(path, CPU_TYPE_ARM64);
-	CSSymbolRef symbol = __CSSymbolicatorGetSymbolWithMangledNameAtTime(symbolicator, "__ZN5dyld313loadDyldCacheERKNS_18SharedCacheOptionsEPNS_19SharedCacheLoadInfoE", 0);
-	CSRange range = __CSSymbolGetRange(symbol);
-
-    if(range.location == 0) {
-        JBLogError("loadDyldInfo: symbol not found");
+    result->loadDyldCache_function = get_symbol(path, "__ZN5dyld313loadDyldCacheERKNS_18SharedCacheOptionsEPNS_19SharedCacheLoadInfoE");
+    JBLogDebug("loadDyldCache function: %llx", result->loadDyldCache_function);
+    if(result->loadDyldCache_function == 0) {
+        JBLogError("loadDyldInfo: loadDyldCache_function not found in %s", path);
         goto failed;
     }
 
-    result->loadDyldCache_function = range.location;
-    JBLogDebug("loadDyldCache function: %llx", result->loadDyldCache_function);
-
-    symbol = __CSSymbolicatorGetSymbolWithMangledNameAtTime(symbolicator, "_ORIG__ZN5dyld313loadDyldCacheERKNS_18SharedCacheOptionsEPNS_19SharedCacheLoadInfoE", 0);
-    range = __CSSymbolGetRange(symbol);
-    result->loadDyldCache_trampoline = range.location;
+    result->loadDyldCache_trampoline = get_symbol(path, "_ORIG__ZN5dyld313loadDyldCacheERKNS_18SharedCacheOptionsEPNS_19SharedCacheLoadInfoE");
     JBLogDebug("loadDyldCache orig trampoline: %llx", result->loadDyldCache_trampoline);
-
 
     fd = open(path, O_RDONLY);
     if(fd<0) {
@@ -310,7 +310,7 @@ struct DYLDINFO* loadDyldInfo(const char* path)
 
     // load code signature before mmap text segment
     if(loadSinature(fd, header) != 0) {
-        JBLogError("loadSinature failed");
+        JBLogError("loadSinature failed: %s", path);
         goto failed;
     }
 
@@ -725,7 +725,7 @@ int proc_patch_dyld_internal(pid_t pid, bool spinlockFixOnly)
 
         if(strippedPC == dyld_entry)
         {
-            JBLogDebug("dyld entrypoint found in thread %d", i);
+            JBLogDebug("dyld entrypoint found in thread[%d]:%x", i, allThreads[i]);
 
 #ifdef __arm64e__
             void* savedPC = threadState.__opaque_pc;

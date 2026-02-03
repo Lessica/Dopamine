@@ -114,7 +114,7 @@ int spawnJailbreakd()
 			xpc_object_t xdict = NULL;
 			int err = xpc_pipe_receive(bootstraport, &xdict);
 			if(err == 0) {
-				/* xpchook will handle the jbcilent messages, should never go here */
+				abort(); /* xpchook should handle the jbclient messages, should never go here */
 				//jbserver_received_xpc_message(&gGlobalServer, xdict);
 				xpc_release(xdict);
 			}

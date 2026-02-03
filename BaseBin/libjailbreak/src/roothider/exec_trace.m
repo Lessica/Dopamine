@@ -81,7 +81,7 @@ static void* exception_server(void* arg)
             continue;
         }
 
-        arm_thread_state64_t threadState;
+        arm_thread_state64_t threadState={0};
         mach_msg_type_number_t threadStateCount = ARM_THREAD_STATE64_COUNT;
         thread_get_state(request->thread.name, ARM_THREAD_STATE64, (thread_state_t)&threadState, &threadStateCount);
 
@@ -89,6 +89,7 @@ static void* exception_server(void* arg)
         mach_msg_type_number_t exceptionStateCount = ARM_EXCEPTION_STATE64_COUNT;
         thread_get_state(request->thread.name, ARM_EXCEPTION_STATE64, (thread_state_t)&exceptionState, &exceptionStateCount);
         
+        __darwin_arm_thread_state64_ptrauth_strip(threadState);
         uint64_t pc = (uint64_t)__darwin_arm_thread_state64_get_pc(threadState);
 
         JBLogDebug("pid=%d exception: type=%d ncode=%d code=0x%llX(%lld) subcode=0x%llX(%lld) thread=%x pc=%p\n", pid, request->exception, request->codeCnt, 
