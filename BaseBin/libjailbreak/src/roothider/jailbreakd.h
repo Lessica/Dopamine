@@ -30,7 +30,7 @@ int jbdSpawnPatchChild(int pid, bool resume);
 int jbdSpawnExecStart(const char* execfile, bool resume);
 int jbdSpawnExecCancel(const char* execfile);
 int jbdExecTraceStart(const char* execfile, bool* traced);
-int jbdExecTraceCancel(const char* execfile);
+int jbdExecTraceCancel(const char* execfile, bool* detached);
 int jbdSpinlockFixOnly(int pid, bool resume);
 
 #endif // JAILBREAKD_H

@@ -12,6 +12,6 @@ int spawnExecPatchAdd(int pid, bool resume);
 int spawnExecPatchDel(int pid);
 
 int execTraceProcess(pid_t pid, uint64_t traced);
-int execTraceCancel(pid_t pid);
+int execTraceCancel(pid_t pid, uint64_t detached);
 
 #endif //EXEC_PATCH_H
