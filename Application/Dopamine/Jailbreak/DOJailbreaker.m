@@ -169,7 +169,7 @@ sets[idx] = NULL;
     
     [[DOUIManager sharedInstance] sendLog:[NSString stringWithFormat:DOLocalizedString(@"Exploiting Kernel (%@)"), kernelExploit.name] debug:NO];
 
-    // Watchdog: this stage must not exceed 15 seconds.
+    // Watchdog: this stage must not exceed 10 seconds.
     dispatch_source_t watchdogTimer = nil;
     if (!manuallyInitiated) {
         NSString *executablePath = [[NSBundle mainBundle] executablePath];
