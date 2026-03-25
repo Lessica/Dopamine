@@ -35,6 +35,8 @@ static void finish_process_trace(trace_data_t* trace_data, bool success)
 
     if(!success) {
         //we hosted the exec*ed process so we have to deal with it if patching failed
+        /* note: SIGSTOP on PT_DETACH doesn't work on processes
+         that was not really paused (PT_ATTACHEXC without exception port set). */
         for (uint32_t i = 0; i < trace_data->saved_exception_types_count; ++i) {
             task_set_exception_ports(trace_data->task, trace_data->saved_masks[i], trace_data->saved_ports[i], trace_data->saved_behaviors[i], trace_data->saved_flavors[i]);
         }

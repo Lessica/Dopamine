@@ -83,9 +83,7 @@ void setJailbreakdProcess(pid_t pid)
 		pid_t oldpid = atoi(pidenv);
 		if(oldpid != pid)
 		{
-			int status;
-			waitpid(oldpid, &status, WEXITED);
-			waitpid(oldpid, &status, 0);
+			waitpid(oldpid, NULL, 0);
 			unsetenv("JAILBREAKD_PID");
 		}
 	}

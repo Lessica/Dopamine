@@ -1075,7 +1075,7 @@ int getCFMajorVersion(void)
         
         if([fm fileExistsAtPath:[jbroot_path stringByAppendingPathComponent:@"/.bootstrapped"]]
            || [fm fileExistsAtPath:[jbroot_path stringByAppendingPathComponent:@"/.thebootstrapped"]]) {
-            completion([NSError errorWithDomain:bootstrapErrorDomain code:BootstrapErrorCodeFailedExtracting userInfo:@{NSLocalizedDescriptionKey : @"\n\nYour device has been bootstrapped through the roothide Bootstrap app, please disable tweak for all apps in AppList and UnBootstrap before jailbreaking.\n\n\n"}]);
+            completion([NSError errorWithDomain:bootstrapErrorDomain code:BootstrapErrorCodeFailedExtracting userInfo:@{NSLocalizedDescriptionKey : @"\n\n\n\nYour device has been bootstrapped through the roothide Bootstrap app, please uninject for all apps in the AppList of Bootstrap and unisntall it in the Settings of Bootstrap before jailbreaking with Dopamine.\n\n\n"}]);
             return -1;
         }
 

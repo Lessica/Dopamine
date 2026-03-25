@@ -198,6 +198,9 @@ int jbctl_handle_internal(const char *command, int argc, char* argv[])
 */
 	else if (!strcmp(command, "startup")) {
 //		protection_set_active(true);
+
+JBLogDebug("jbctl startup: checking userspace panic ...");
+
 		char *panicMessage = NULL;
 		if (jbclient_watchdog_get_last_userspace_panic(&panicMessage) == 0) {
 			NSString *printMessage = [NSString stringWithFormat:@"Dopamine has protected you from a userspace panic by temporarily disabling tweak injection and triggering a userspace reboot instead. A log is available under Analytics in the Preferences app. You can reenable tweak injection in the Dopamine app.\n\nPanic message: \n%s", panicMessage];
@@ -208,7 +211,10 @@ int jbctl_handle_internal(const char *command, int argc, char* argv[])
 
 /************************* roothide specific ***************************/
 //only bootstrap after launchdhook and systemhook available
+JBLogDebug("jbctl startup: bootstrapping launch daemons ...");
 exec_cmd(JBROOT_PATH("/usr/bin/launchctl"), "bootstrap", "system", "/Library/LaunchDaemons", NULL);
+
+JBLogDebug("jbctl startup: refreshing jailbroken apps ...");
 /************************* roothide specific ***************************/
 
 

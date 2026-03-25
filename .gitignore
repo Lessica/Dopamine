@@ -18,3 +18,4 @@ jbupdate.sh
 BaseBin/jbupdate.sh
 BaseBin/opainject
 /BaseBin/roothidehooks/packages
+BaseBin/systemhook/src/roothider_test*
