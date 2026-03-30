@@ -23,3 +23,11 @@ _MACHOMERGER_ORIG__ZN5dyld46Loader18expandAtLoaderPathERNS_12RuntimeStateEPKcRKN
     // FALLTHROUGH
 _MACHOMERGER_HOOKTRAMPOLINE__ZN5dyld46Loader18expandAtLoaderPathERNS_12RuntimeStateEPKcRKNS0_11LoadOptionsEPKS0_bPc:
     b .
+
+.global _MACHOMERGER_ORIG__ZNK5dyld413ProcessConfig9DyldCache17isOverridablePathEPKc
+.global _MACHOMERGER_HOOKTRAMPOLINE__ZNK5dyld413ProcessConfig9DyldCache17isOverridablePathEPKc
+_MACHOMERGER_ORIG__ZNK5dyld413ProcessConfig9DyldCache17isOverridablePathEPKc:
+    nop // Will be replaced with the original first instruction by machomerger
+    // FALLTHROUGH
+_MACHOMERGER_HOOKTRAMPOLINE__ZNK5dyld413ProcessConfig9DyldCache17isOverridablePathEPKc:
+    b .

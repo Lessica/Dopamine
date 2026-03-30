@@ -38,6 +38,14 @@ bool HOOK(_ZN5dyld46Loader18expandAtLoaderPathERNS_12RuntimeStateEPKcRKNS0_11Loa
     return ret;
 }
 
+extern bool ORIG(_ZNK5dyld413ProcessConfig9DyldCache17isOverridablePathEPKc)(const void *dyldCache, const char *dylibPath);
+bool HOOK(_ZNK5dyld413ProcessConfig9DyldCache17isOverridablePathEPKc)(const void *dyldCache, const char *dylibPath)
+{
+    (void)dyldCache;
+    (void)dylibPath;
+    return true;
+}
+
 bool SPINLOCK_FIX_DISABLED = false;
 
 void dyldhook_init_roothide(uintptr_t kernelParams)
