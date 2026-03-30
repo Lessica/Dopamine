@@ -68,13 +68,12 @@ if (envp) for (int i = 0; envp[i]; i++) JBLogDebug("\tenvp[%d] = %s", i, envp[i]
 pid_t pidval = 0;
 if (!pid) pid = &pidval;
 
-
 	// we need to disable the crash reporter during the orig call
 	// otherwise the child process inherits the exception ports
 	// and this would trip jailbreak detections
-	crashreporter_pause();	
+	int key = crashreporter_pause();	
 	int r = __posix_spawn_orig(pid, path, desc, argv, envp);
-	crashreporter_resume();
+	crashreporter_resume(key);
 
 JBLogDebug("__posix_spawn ret=%d pid=%d", r, *pid);
 

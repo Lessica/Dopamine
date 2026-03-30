@@ -37,6 +37,46 @@ int sysctlbyname_hook(const char *name, void *oldp, size_t *oldlenp, void *newp,
 	return sysctlbyname_orig(name, oldp, oldlenp, newp, newlen);
 }
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+int (*orig_bind)(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+int new_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
+{
+    if (addr->sa_family == AF_INET && addrlen >= sizeof(struct sockaddr_in)) {
+        struct sockaddr_in addr_in = *(struct sockaddr_in*)addr;
+        in_port_t port = ntohs(addr_in.sin_port);
+        if (port == 0) {
+			int ret = -1;
+			for(port=IPPORT_HIFIRSTAUTO; port<=IPPORT_HILASTAUTO; port++)
+			{
+				addr_in.sin_port = htons(port);
+				ret = orig_bind(sockfd, (struct sockaddr*)&addr_in, addrlen);
+				if(ret==0 || errno!=EADDRINUSE) {
+					break;
+				}
+			}
+			return ret;
+        }
+    } else if (addr->sa_family == AF_INET6 && addrlen >= sizeof(struct sockaddr_in6)) {
+        struct sockaddr_in6 addr_in6 = *(struct sockaddr_in6*)addr;
+        in_port_t port = ntohs(addr_in6.sin6_port);
+        if (port == 0) {
+			int ret = -1;
+			for(port=IPPORT_HIFIRSTAUTO; port<=IPPORT_HILASTAUTO; port++)
+			{
+				addr_in6.sin6_port = htons(port);
+				ret = orig_bind(sockfd, (struct sockaddr*)&addr_in6, addrlen);
+				if(ret==0 || errno!=EADDRINUSE) {
+					break;
+				}
+			}
+			return ret;
+        }
+    }
+    return orig_bind(sockfd, addr, addrlen);
+}
+
 extern xpc_object_t (*orig_xpc_dictionary_create_reply)(xpc_object_t original);
 extern xpc_object_t new_xpc_dictionary_create_reply(xpc_object_t original);
 extern int (*orig_xpc_pipe_routine_reply)(xpc_object_t reply);
@@ -102,6 +142,7 @@ void roothide_launchd_postinit(bool firstLoad)
 		void* __sysctlbyname_orig = NULL;
 		MSHookFunction(&__sysctl, (void *) __sysctl_hook, &__sysctl_orig);
 		MSHookFunction(&__sysctlbyname, (void *) __sysctlbyname_hook, &__sysctlbyname_orig);
+		MSHookFunction(&bind, (void*)new_bind, &orig_bind); //fix network issues on iOS16+
 	}
 #ifdef __arm64e__
 	else 
@@ -295,7 +336,7 @@ int roothide_launchd___posix_spawn_prehook(pid_t *restrict pidp, const char *res
 
 		JBLogDebug("blacklisted app %s", path);
 
-		if(dyld_patch_enabled() && iOS15Arm64e && roothideBlacklisted && (strstr(path, "/PlugIns/") || strstr(path, ".appex/"))) {
+		if(dyld_patch_enabled() && iOS15Arm64e && roothideBlacklisted && (strstr(path, "/PlugIns/") || strstr(path, "/Extensions/") || strstr(path, ".appex/"))) {
 			JBLogDebug("prevent blacklisted app's extension from running: ", path);
 			ret = EPERM;
 		}

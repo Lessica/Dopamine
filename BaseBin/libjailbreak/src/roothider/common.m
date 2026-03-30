@@ -597,6 +597,17 @@ bool otherJailbreakActived()
     //     }
     // }
 
+	char pathbuf[PATH_MAX] = {0};
+	int ret = proc_pidpath(1, pathbuf, sizeof(pathbuf));
+	if(ret <= 0) {
+		JBLogError("proc_pidpath failed for pid 1: %d", ret);
+		return true;
+	}
+
+	if(strcmp(pathbuf, "/sbin/launchd") != 0) {
+		return true;
+	}
+
     mach_port_t port = MACH_PORT_NULL;
     kern_return_t kr = bootstrap_look_up(bootstrap_port, "com.opa334.jailbreakd", &port);
     if(kr == KERN_SUCCESS) {
@@ -784,14 +795,14 @@ void loadAppStoredIdentifiers()
             continue;
         }
 
-        if([fileManager fileExistsAtPath:[containerPath stringByAppendingPathComponent:@"_TrollStore"] isDirectory:NULL]
-            || [fileManager fileExistsAtPath:[containerPath stringByAppendingPathComponent:@"_TrollStoreLite"] isDirectory:NULL])
+        if([fileManager fileExistsAtPath:[containerPath stringByAppendingPathComponent:@"_TrollStore"]]
+            || [fileManager fileExistsAtPath:[containerPath stringByAppendingPathComponent:@"_TrollStoreLite"]])
         {
             JBLogDebug("Skipping trollstored app container: %s : %s", MCMMetadataIdentifier.UTF8String, containerPath.UTF8String);
             continue;
         }
 
-        if(![fileManager fileExistsAtPath:[containerPath stringByAppendingPathComponent:@"iTunesMetadata.plist"] isDirectory:NULL])
+        if(![fileManager fileExistsAtPath:[containerPath stringByAppendingPathComponent:@"iTunesMetadata.plist"]])
         {
             JBLogDebug("Skipping non-stored app container: %s : %s", MCMMetadataIdentifier.UTF8String, containerPath.UTF8String);
             continue;
@@ -811,7 +822,7 @@ void loadAppStoredIdentifiers()
                     JBLogDebug("*** Mismatched Bundle ID and MCMMetadataIdentifier: %s != %s : %s", appBundleID.UTF8String, MCMMetadataIdentifier.UTF8String, appPath.UTF8String);
                 }
                 
-                if(![fileManager fileExistsAtPath:[appPath stringByAppendingPathComponent:@"SC_Info"] isDirectory:NULL])
+                if(![fileManager fileExistsAtPath:[appPath stringByAppendingPathComponent:@"SC_Info"]])
                 {
                     JBLogDebug("Skipping non-encrypted app: %s", appPath.UTF8String);
                     continue;
@@ -841,6 +852,26 @@ void loadAppStoredIdentifiers()
                             [StoredAppIdentifiers addObject:plugInBundleID];
                         } else {
                             JBLogDebug("  *** No Bundle ID found: %s", plugInPath.UTF8String);
+                        }
+                    }
+                }
+
+                NSString *extensionsPath = [appPath stringByAppendingPathComponent:@"Extensions"];
+                if ([fileManager fileExistsAtPath:extensionsPath]) 
+                {
+                    NSArray *extensions = [fileManager contentsOfDirectoryAtPath:extensionsPath error:nil];
+                    for (NSString *extension in extensions) 
+                    {
+                        NSString *extensionPath = [extensionsPath stringByAppendingPathComponent:extension];
+                        NSString *extensionInfoPath = [extensionPath stringByAppendingPathComponent:@"Info.plist"];
+                        NSDictionary *extensionInfo = [NSDictionary dictionaryWithContentsOfFile:extensionInfoPath];
+                        NSString *extensionBundleID = extensionInfo[@"CFBundleIdentifier"];
+                        
+                        if (extensionBundleID) {
+                            JBLogDebug("  Extensions: %s -> %s", extension.UTF8String, extensionBundleID.UTF8String);
+                            [StoredAppIdentifiers addObject:extensionBundleID];
+                        } else {
+                            JBLogDebug("  *** No Bundle ID found: %s", extensionPath.UTF8String);
                         }
                     }
                 }
@@ -906,3 +937,24 @@ bool is_safe_bundle_identifier(const char* identifier)
 
     return false;
 }
+
+int wait_for_exit(pid_t pid)
+{
+    while (1)  
+    {
+		int status=0;
+        if (waitpid(pid, &status, 0) == -1) {
+            if (errno == EINTR) {
+                continue;
+            }
+            perror("waitpid");
+            return -1;
+        }
+        if (WIFEXITED(status)) {
+            return WEXITSTATUS(status);
+        } else if (WIFSIGNALED(status)) {
+            return 128 + WTERMSIG(status);
+        }
+    }
+}
+

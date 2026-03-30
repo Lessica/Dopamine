@@ -15,7 +15,6 @@
 #include <pthread/pthread.h>
 #include <dispatch/dispatch.h>
 
-#include "../libjailbreak.h"
 #include "crashreporter.h"
 #include "common.h"
 #include "log.h"
@@ -29,8 +28,9 @@
 #define RB_PANIC	0x800
 int reboot_np(int howto, const char *message); //only works in launchd
 
+#undef ABORT
 #define ABORT(...) do { \
-		char *message; \
+		char *message=NULL; \
 		asprintf(&message, __VA_ARGS__); \
 		reboot_np(RB_PANIC|RB_QUICK, message); \
 		free(message); \
@@ -227,15 +227,25 @@ void crashreporter_save_outfile(FILE *f)
 	}
 }
 
-void crashreporter_dump_mach(FILE *f, int code, int subcode, arm_thread_state64_t threadState, arm_exception_state64_t exceptionState, vm_address_t *bt)
+void crashreporter_dump_mach(FILE *f, int exception, int ncode, int64_t* code, arm_thread_state64_t threadState, arm_exception_state64_t exceptionState, pthread_t pthread)
 {
-	fprintf(f, "Exception:         %s\n", crashreporter_string_for_code(code));
-	fprintf(f, "Exception Subcode: %d\n", subcode);
+	fprintf(f, "Exception:            %s\n", crashreporter_string_for_code(exception));
+for(int i=0; i < ncode; i++)
+	fprintf(f, "Exception Code[%d]:    0x%016llX (%lld)\n", i, code[i], code[i]);
 	fprintf(f, "\n");
 
 	fprintf(f, "Register State:\n");
-	uint64_t pc = (uint64_t)__darwin_arm_thread_state64_get_pc(threadState);
-	uint64_t lr = (uint64_t)__darwin_arm_thread_state64_get_lr(threadState);
+
+	arm_thread_state64_t strippedState = threadState;
+	__darwin_arm_thread_state64_ptrauth_strip(strippedState);
+
+#ifdef __arm64e__
+	uint32_t flags = threadState.__opaque_flags;
+	threadState.__opaque_flags |= __DARWIN_ARM_THREAD_STATE64_FLAGS_NO_PTRAUTH;
+	threadState.__opaque_flags &= ~(__DARWIN_ARM_THREAD_STATE64_FLAGS_IB_SIGNED_LR|__DARWIN_ARM_THREAD_STATE64_FLAGS_KERNEL_SIGNED_PC|__DARWIN_ARM_THREAD_STATE64_FLAGS_KERNEL_SIGNED_LR);
+#else
+	uint32_t flags = threadState.__pad;
+#endif
 
 	for(int i = 0; i <= 28; i++) {
 		if (i < 10) {
@@ -249,11 +259,30 @@ void crashreporter_dump_mach(FILE *f, int code, int subcode, arm_thread_state64_
 			fprintf(f, ", ");
 		}
 	}
-	fprintf(f, " lr = 0x%016llX,  pc = 0x%016llX,  sp = 0x%016llX,  fp = 0x%016llX, cpsr=         0x%08X, far = 0x%016llX\nesr = 0x%08X\n\n", lr, pc, (uint64_t)__darwin_arm_thread_state64_get_sp(threadState), (uint64_t)__darwin_arm_thread_state64_get_fp(threadState), threadState.__cpsr, exceptionState.__far, exceptionState.__esr);
+
+	fprintf(f, " lr = 0x%016llX,  pc = 0x%016llX,  sp = 0x%016llX,  fp = 0x%016llX, cpsr= 0x%08X,       flags = 0x%08X\nesr = 0x%08X,         far = 0x%016llX\n\n",
+		 (uint64_t)__darwin_arm_thread_state64_get_lr(threadState),
+		 (uint64_t)__darwin_arm_thread_state64_get_pc(threadState),
+		 (uint64_t)__darwin_arm_thread_state64_get_sp(threadState),
+		 (uint64_t)__darwin_arm_thread_state64_get_fp(threadState),
+		 threadState.__cpsr, flags, exceptionState.__esr, exceptionState.__far);
+
+	fprintf(f, "Stripped State:\n");
+	fprintf(f, " pc = 0x%016llX,  lr = 0x%016llX,  sp = 0x%016llX,  fp = 0x%016llX\n\n",
+		(uint64_t)__darwin_arm_thread_state64_get_pc(strippedState),
+		(uint64_t)__darwin_arm_thread_state64_get_lr(strippedState),
+		(uint64_t)__darwin_arm_thread_state64_get_sp(strippedState),
+		(uint64_t)__darwin_arm_thread_state64_get_fp(strippedState));
 
 	fprintf(f, "Backtrace:\n");
-	crashreporter_dump_backtrace_line(f, (vm_address_t)pc);
-	crashreporter_dump_backtrace_line(f, (vm_address_t)lr);
+	crashreporter_dump_backtrace_line(f, (vm_address_t)__darwin_arm_thread_state64_get_pc(strippedState));
+	crashreporter_dump_backtrace_line(f, (vm_address_t)__darwin_arm_thread_state64_get_lr(strippedState));
+
+	vm_address_t *bt = malloc(100 * sizeof(vm_address_t));
+	memset(bt, 0, 100 * sizeof(vm_address_t));
+	unsigned c = 100;
+	pthread_backtrace(pthread, bt, c, &c, 0, (void *)__darwin_arm_thread_state64_get_fp(strippedState));
+
 	int btIdx = 0;
 	vm_address_t btAddr = bt[btIdx++];
 	while (btAddr != 0) {
@@ -267,7 +296,7 @@ void crashreporter_dump_image_list(FILE *f)
 {
 	fprintf(f, "Images:\n");
 	for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-		fprintf(f, "%s: %p\n", _dyld_get_image_name(i), _dyld_get_image_header(i));
+		fprintf(f, "0x%016llX\t%s\n", (uint64_t)_dyld_get_image_header(i), _dyld_get_image_name(i));
 	}
 }
 
@@ -286,24 +315,19 @@ void crashreporter_catch_mach(__Request__mach_exception_raise_t *request, __Repl
 	reply->NDR = request->NDR;
 	reply->RetCode = KERN_FAILURE;
 
-	vm_address_t *bt = malloc(100 * sizeof(vm_address_t));
-	memset(bt, 0, 100 * sizeof(vm_address_t));
-	unsigned c = 100;
-	pthread_backtrace(pthread, bt, c, &c, 0, (void *)__darwin_arm_thread_state64_get_fp(threadState));
-
 	__uint64_t tid = 0;
 	pthread_threadid_np(pthread, &tid);
 
 	char *name = NULL;
 	FILE *f = crashreporter_open_outfile(gReportName, &name);
 	if (f) {
-		fprintf(f, "Thread %d crashed.\n\n", tid);
-		crashreporter_dump_mach(f, request->code[0], request->code[1], threadState, exceptionState, bt);
+		fprintf(f, "Thread %llu crashed.\n\n", tid);
+		crashreporter_dump_mach(f, request->exception, request->codeCnt, request->code, threadState, exceptionState, pthread);
 		crashreporter_dump_image_list(f);
 		crashreporter_save_outfile(f);
 	}
 
-	ABORT("Mach exception occured on thread %d. A detailed report has been written to the file %s.", tid, name ? name : "(null)");
+	ABORT("Mach exception occured on thread %llu. A detailed report has been written to the file %s.", tid, name ? name : "(null)");
 }
 
 void crashreporter_dump_objc(FILE *f, NSException *e)
@@ -348,7 +372,7 @@ void crashreporter_catch_objc(NSException *e)
 		char *name = NULL;
 		FILE *f = crashreporter_open_outfile(gReportName, &name);
 		if (f) {
-			fprintf(f, "Thread %d crashed.\n\n", tid);
+			fprintf(f, "Thread %llu crashed.\n\n", tid);
 			@try {
 				crashreporter_dump_objc(f, e);
 				crashreporter_dump_image_list(f);
@@ -358,7 +382,7 @@ void crashreporter_catch_objc(NSException *e)
 			}
 			crashreporter_save_outfile(f);
 		}
-		ABORT("Objective-C exception occured on thread %d. A detailed report has been written to the file %s.", tid, name ? name : "(null)");
+		ABORT("Objective-C exception occured on thread %llu. A detailed report has been written to the file %s.", tid, name ? name : "(null)");
 	}
 }
 
@@ -381,8 +405,37 @@ void *crashreporter_listen(void *arg)
             ABORT("recv mach msg failed: %x", ret);
         }
 
+		bool ignored = false;
 		__Reply__mach_exception_raise_t reply = {0};
-		crashreporter_catch_mach((__Request__mach_exception_raise_t *)msg, &reply);
+		__Request__mach_exception_raise_t* request = (__Request__mach_exception_raise_t *)msg;
+
+		pid_t pid=0;
+		kern_return_t kr = pid_for_task(request->task.name, &pid);
+		if(kr != KERN_SUCCESS || pid <= 0) {
+			ABORT("pid_for_task failed: pid=%d, error=%x,%s", pid, kr, mach_error_string(kr));
+		}
+
+		if(pid != getpid()) {
+			ABORT("Mach Exception(%d,%llx,%llx) from another process: %d", request->exception, request->code[0], request->code[1], pid);
+		}
+
+		/*
+		if(proc_traced(getpid()))
+		{
+			if(request->exception == EXC_SOFTWARE && request->codeCnt == 2 && request->code[0] == EXC_SOFT_SIGNAL) 
+			{
+				int signum = (int)request->code[1];
+				if(signum < SIGILL || signum > SIGSYS)
+				{
+					FileLogDebug("Ignoring EXC_SOFTWARE for signal %d", signum);
+					reply.RetCode = KERN_SUCCESS;
+					reply.NDR = request->NDR;
+					ignored = true;
+				}
+			}
+		}//*/
+
+		if(!ignored) crashreporter_catch_mach(request, &reply);
 
 		reply.Head.msgh_bits = MACH_MSGH_BITS(MACH_MSGH_BITS_REMOTE(msg->msgh_bits), 0);
 		reply.Head.msgh_size = sizeof(__Reply__mach_exception_raise_t);
@@ -394,23 +447,41 @@ void *crashreporter_listen(void *arg)
 	}
 }
 
-void crashreporter_pause(void)
+int gCrashReporterStateKey = 0;
+int crashreporter_pause(void)
 {
-	if (gCrashReporterState == kCrashReporterStateActive) {
-		task_set_exception_ports(mach_task_self_, EXC_MASK_CRASH_RELATED, MACH_PORT_NULL, 0, 0);
-		NSSetUncaughtExceptionHandler(defaultNSExceptionHandler);
-		defaultNSExceptionHandler = nil;
-		gCrashReporterState = kCrashReporterStatePaused;
+	int key = 0;
+	@synchronized(@"CrashReporterStateKey")
+	{
+		if (gCrashReporterState == kCrashReporterStateActive) {
+			task_set_exception_ports(mach_task_self_, EXC_MASK_CRASH_RELATED, MACH_PORT_NULL, 0, 0);
+			NSSetUncaughtExceptionHandler(defaultNSExceptionHandler);
+			defaultNSExceptionHandler = nil;
+			gCrashReporterState = kCrashReporterStatePaused;
+		}
+		//only allow the last pause to be resumed
+		key = ++gCrashReporterStateKey;
 	}
+	return key;
 }
 
-void crashreporter_resume(void)
+void crashreporter_resume(int key)
 {
-	if (gCrashReporterState == kCrashReporterStatePaused) {
-		task_set_exception_ports(mach_task_self_, EXC_MASK_CRASH_RELATED, gExceptionPort, EXCEPTION_DEFAULT, ARM_THREAD_STATE64);
-		defaultNSExceptionHandler = NSGetUncaughtExceptionHandler();
-		NSSetUncaughtExceptionHandler(crashreporter_catch_objc);
-		gCrashReporterState = kCrashReporterStateActive;
+	@synchronized(@"CrashReporterStateKey")
+	{
+		if(key == gCrashReporterStateKey)
+		{
+			if (gCrashReporterState == kCrashReporterStatePaused) {
+				task_set_exception_ports(mach_task_self_, EXC_MASK_CRASH_RELATED, gExceptionPort, EXCEPTION_DEFAULT|MACH_EXCEPTION_CODES, ARM_THREAD_STATE64);
+				defaultNSExceptionHandler = NSGetUncaughtExceptionHandler();
+				NSSetUncaughtExceptionHandler(crashreporter_catch_objc);
+				gCrashReporterState = kCrashReporterStateActive;
+			}
+		}
+		else
+		{
+			JBLogError("crashreporter_resume called with mismatched key: %d (current key: %d)", key, gCrashReporterStateKey);
+		}
 	}
 }
 
@@ -424,7 +495,7 @@ void signal_handler(int signo, siginfo_t *info, void *context)
     char *name = NULL;
     FILE *f = crashreporter_open_outfile(gReportName, &name);
     if (f) {
-		fprintf(f, "Thread %d crashed.\n\n", tid);
+		fprintf(f, "Thread %llu crashed.\n\n", tid);
         
         ucontext_t* ucontext = (ucontext_t*)context;
         fprintf(f, "Signal %s(%d/%d), errno=%d, code=%d, status=%d, addr=%p, value=%p, band=%lx\n\n", strsignal(signo), signo, info->si_signo,
@@ -444,19 +515,38 @@ void signal_handler(int signo, siginfo_t *info, void *context)
             }
         }
 
-        fprintf(f, "  lr = 0x%016llX,   pc = 0x%016llX,   sp = 0x%016llX,   fp = 0x%016llX, cpsr = 0x%08X\n far = 0x%016llX,  esr = 0x%08X\n\n",
-                (uint64_t)__darwin_arm_thread_state64_get_lr(ucontext->uc_mcontext->__ss),
-                (uint64_t)__darwin_arm_thread_state64_get_pc(ucontext->uc_mcontext->__ss),
-                (uint64_t)__darwin_arm_thread_state64_get_sp(ucontext->uc_mcontext->__ss),
-                (uint64_t)__darwin_arm_thread_state64_get_fp(ucontext->uc_mcontext->__ss),
-                ucontext->uc_mcontext->__ss.__cpsr,
-                ucontext->uc_mcontext->__es.__far,
-                ucontext->uc_mcontext->__es.__esr);
+		arm_thread_state64_t threadState = ucontext->uc_mcontext->__ss;
+		arm_thread_state64_t strippedState = threadState;
+		__darwin_arm_thread_state64_ptrauth_strip(strippedState);
+
+#ifdef __arm64e__
+		uint32_t flags = threadState.__opaque_flags;
+		threadState.__opaque_flags |= __DARWIN_ARM_THREAD_STATE64_FLAGS_NO_PTRAUTH;
+		threadState.__opaque_flags &= ~(__DARWIN_ARM_THREAD_STATE64_FLAGS_IB_SIGNED_LR|__DARWIN_ARM_THREAD_STATE64_FLAGS_KERNEL_SIGNED_PC|__DARWIN_ARM_THREAD_STATE64_FLAGS_KERNEL_SIGNED_LR);
+#else
+		uint32_t flags = threadState.__pad;
+#endif
+
+		fprintf(f, " lr = 0x%016llX,  pc = 0x%016llX,  sp = 0x%016llX,  fp = 0x%016llX, cpsr= 0x%08X,       flags = 0x%08X\nesr = 0x%08X,         far = 0x%016llX\n\n",
+			(uint64_t)__darwin_arm_thread_state64_get_lr(threadState),
+			(uint64_t)__darwin_arm_thread_state64_get_pc(threadState),
+			(uint64_t)__darwin_arm_thread_state64_get_sp(threadState),
+			(uint64_t)__darwin_arm_thread_state64_get_fp(threadState),
+			ucontext->uc_mcontext->__ss.__cpsr, flags, 
+			ucontext->uc_mcontext->__es.__esr, 
+			ucontext->uc_mcontext->__es.__far);
+
+		fprintf(f, "Stripped State:\n");
+		fprintf(f, " pc = 0x%016llX,  lr = 0x%016llX,  sp = 0x%016llX,  fp = 0x%016llX\n\n",
+			(uint64_t)__darwin_arm_thread_state64_get_pc(strippedState),
+			(uint64_t)__darwin_arm_thread_state64_get_lr(strippedState),
+			(uint64_t)__darwin_arm_thread_state64_get_sp(strippedState),
+			(uint64_t)__darwin_arm_thread_state64_get_fp(strippedState));
 
         void *callstacks[30] = {0};
         int nptrs = backtrace(callstacks, sizeof(callstacks)/sizeof(callstacks[0]));
 
-        printf("Stack trace:\n");
+        fprintf(f, "Stack trace:\n");
         char** symbols = backtrace_symbols(callstacks, nptrs);
         
         if(symbols != NULL) {
@@ -468,11 +558,13 @@ void signal_handler(int signo, siginfo_t *info, void *context)
             printf("no backtrace captured\n");
             return;
         }
+
+        crashreporter_dump_image_list(f);
         
         crashreporter_save_outfile(f);
     }
     
-    ABORT("Unexpected signal %d on thread %d, A detailed report has been written to the file %s.", signo, tid, name ? name : "(null)");
+    ABORT("Unexpected signal %d on thread %llu, A detailed report has been written to the file %s.", signo, tid, name ? name : "(null)");
 }
 
 int sigcatch[] = {
@@ -507,7 +599,7 @@ void crashreporter_start()
 		mach_port_insert_right(mach_task_self_, gExceptionPort, gExceptionPort, MACH_MSG_TYPE_MAKE_SEND);
 		pthread_create(&gExceptionThread, NULL, crashreporter_listen, "crashreporter");
 		gCrashReporterState = kCrashReporterStatePaused;
-		crashreporter_resume();
+		crashreporter_resume(0);
 	}
 }
 

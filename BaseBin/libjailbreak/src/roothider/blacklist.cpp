@@ -17,41 +17,50 @@ extern int audit_token_to_pidversion(audit_token_t atoken);
 
 }
 
-static std::set<pid_t*> uncachedBlacklistedProcesses;
-static std::map<pid_t, int> blacklistedProcessesState;
+//do not use cxx auto constructors
+
+static std::set<pid_t*>* uncachedBlacklistedProcesses;
+static std::map<pid_t, int>* blacklistedProcessesState;
+
+static void cxx_global_vars_init()
+{
+    uncachedBlacklistedProcesses = new std::set<pid_t*>();
+    blacklistedProcessesState = new std::map<pid_t, int>();
+}
 
 static pthread_rwlock_t stateLock = {0};
 
-void stateLockInit()
+static void stateLockInit()
 {
     pthread_rwlock_init(&stateLock, NULL);
 }
-void stateReadLock()
+static void stateReadLock()
 {
     pthread_rwlock_rdlock(&stateLock);
 }
-void stateReadUnlock()
+static void stateReadUnlock()
 {
     pthread_rwlock_unlock(&stateLock);
 }
-void stateWriteLock()
+static void stateWriteLock()
 {
     pthread_rwlock_wrlock(&stateLock);
 }
-void stateWriteUnlock()
+static void stateWriteUnlock()
 {
     pthread_rwlock_unlock(&stateLock);
 }
 
-void initBlacklistState()
+static void initBlacklistState()
 {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         stateLockInit();
+        cxx_global_vars_init();
     });
 }
 
-bool _isBlacklistedProcess(pid_t pid, int pidversion)
+static bool _isBlacklistedProcess(pid_t pid, int pidversion)
 {
     initBlacklistState();
     
@@ -59,7 +68,7 @@ bool _isBlacklistedProcess(pid_t pid, int pidversion)
 
     stateReadLock();
 
-    for(auto it = uncachedBlacklistedProcesses.begin(); it != uncachedBlacklistedProcesses.end(); ++it)
+    for(auto it = uncachedBlacklistedProcesses->begin(); it != uncachedBlacklistedProcesses->end(); ++it)
     {
         pid_t uncachedPid = *(*it);
         if(uncachedPid>0 && uncachedPid==pid)
@@ -73,8 +82,8 @@ bool _isBlacklistedProcess(pid_t pid, int pidversion)
 
     if(!blacklisted)
     {
-        auto it = blacklistedProcessesState.find(pid);
-        if(it != blacklistedProcessesState.end())
+        auto it = blacklistedProcessesState->find(pid);
+        if(it != blacklistedProcessesState->end())
         {
             int cached_pidversion = it->second;
             if(cached_pidversion == pidversion)
@@ -111,7 +120,7 @@ extern "C" pid_t* allocBlacklistProcessId()
 
     stateWriteLock();
 
-    uncachedBlacklistedProcesses.insert(pidp);
+    uncachedBlacklistedProcesses->insert(pidp);
     
     stateWriteUnlock();
 
@@ -129,11 +138,11 @@ extern "C" void commitBlacklistProcessId(pid_t* pidp)
     {
         int pidversion = proc_get_pidversion(pid);
         if (pidversion > 0) {
-            blacklistedProcessesState[pid] = pidversion;
+            (*blacklistedProcessesState)[pid] = pidversion;
         }
     }
 
-    uncachedBlacklistedProcesses.erase(pidp);
+    uncachedBlacklistedProcesses->erase(pidp);
 
     free(pidp);
 

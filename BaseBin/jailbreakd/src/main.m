@@ -103,10 +103,7 @@ int main(int argc, char* argv[])
 				return 0;
 			} else {
 				kill(pid, SIGKILL);
-
-				int status;
-				waitpid(pid, &status, WEXITED);
-				waitpid(pid, &status, 0);
+				waitpid(pid, NULL, 0);
 			}
 		}
 

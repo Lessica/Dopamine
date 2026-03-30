@@ -18,7 +18,10 @@ NSMutableDictionary* trace_data_record = nil;
 
 typedef struct {
     pid_t pid;
+    bool cancelled;
     uint64_t    traced_flag_addr;
+    uint64_t    detached_flag_addr;
+    mach_port_t           task;
     exception_mask_t       saved_masks[EXC_TYPES_COUNT];
     mach_port_t            saved_ports[EXC_TYPES_COUNT];
     exception_behavior_t   saved_behaviors[EXC_TYPES_COUNT];
@@ -32,6 +35,11 @@ static void finish_process_trace(trace_data_t* trace_data, bool success)
 
     if(!success) {
         //we hosted the exec*ed process so we have to deal with it if patching failed
+        /* note: SIGSTOP on PT_DETACH doesn't work on processes
+         that was not really paused (PT_ATTACHEXC without exception port set). */
+        for (uint32_t i = 0; i < trace_data->saved_exception_types_count; ++i) {
+            task_set_exception_ports(trace_data->task, trace_data->saved_masks[i], trace_data->saved_ports[i], trace_data->saved_behaviors[i], trace_data->saved_flavors[i]);
+        }
         ptrace(PT_DETACH, pid, NULL, SIGSTOP);
         kill(pid, SIGQUIT); //core dump
         kill(pid, SIGKILL);
@@ -81,7 +89,7 @@ static void* exception_server(void* arg)
             continue;
         }
 
-        arm_thread_state64_t threadState;
+        arm_thread_state64_t threadState={0};
         mach_msg_type_number_t threadStateCount = ARM_THREAD_STATE64_COUNT;
         thread_get_state(request->thread.name, ARM_THREAD_STATE64, (thread_state_t)&threadState, &threadStateCount);
 
@@ -89,6 +97,7 @@ static void* exception_server(void* arg)
         mach_msg_type_number_t exceptionStateCount = ARM_EXCEPTION_STATE64_COUNT;
         thread_get_state(request->thread.name, ARM_EXCEPTION_STATE64, (thread_state_t)&exceptionState, &exceptionStateCount);
         
+        __darwin_arm_thread_state64_ptrauth_strip(threadState);
         uint64_t pc = (uint64_t)__darwin_arm_thread_state64_get_pc(threadState);
 
         JBLogDebug("pid=%d exception: type=%d ncode=%d code=0x%llX(%lld) subcode=0x%llX(%lld) thread=%x pc=%p\n", pid, request->exception, request->codeCnt, 
@@ -103,7 +112,9 @@ static void* exception_server(void* arg)
         }
         else if (request->exception == EXC_SOFTWARE && request->codeCnt == 2 && request->code[0] == EXC_SOFT_SIGNAL) 
         {
-            JBLogDebug("exec* pid=%d got signal: %d\n", pid, (int)request->code[1]);
+            JBLogDebug("exec* pid=%d cancelled=%d got signal: %d\n", pid, trace_data->cancelled, (int)request->code[1]);
+
+            trace_data->task = request->task.name;
 
             switch(request->code[1]) {
                 case SIGSTOP: {
@@ -132,11 +143,25 @@ static void* exception_server(void* arg)
                 // lost our old task port during the exec, so we just need to switch over
                 // to using this new task port
                 case SIGTRAP: {
-                    if(roothide_patch_proc(pid) != 0) {
-                        JBLogError("roothide_patch_proc failed for pid=%d, %s\n", pid, proc_get_path(pid,NULL));
-                        finish_process_trace(trace_data, false);
-                        trace_data = NULL;
-                        break;
+                    if(trace_data->cancelled == false)
+                    {
+                        if(roothide_patch_proc(pid) != 0) {
+                            JBLogError("roothide_patch_proc failed for pid=%d, %s\n", pid, proc_get_path(pid,NULL));
+                            finish_process_trace(trace_data, false);
+                            trace_data = NULL;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        bool data=true;
+                        kern_return_t kr = vm_write(request->task.name, trace_data->detached_flag_addr, (mach_vm_address_t)&data, sizeof(data));
+                        if(kr != KERN_SUCCESS) {
+                            JBLogError("vm_write error: %x, %s\n", kr, mach_error_string(kr));
+                            finish_process_trace(trace_data, false);
+                            trace_data = NULL;
+                            break;
+                        }
                     }
 
                     bool exception_port_restore_failed = false;
@@ -238,6 +263,14 @@ int execTraceProcess(pid_t pid, uint64_t traced)
         if(kr == KERN_SUCCESS) {
 
             [trace_data_lock lock];
+
+            trace_data_t* existing_trace_data = (trace_data_t*)[[trace_data_record objectForKey:@(pid)] pointerValue];
+            if(existing_trace_data) { // pid reused by kernel?
+                JBLogError("trace data already exists for pid=%d", pid);
+                finish_process_trace(existing_trace_data, true);
+                existing_trace_data = NULL;
+            }
+
             [trace_data_record setObject:[NSValue valueWithPointer:trace_data] forKey:@(pid)];
 
             int ret = ptrace(PT_ATTACHEXC, pid, NULL, 0);
@@ -265,16 +298,15 @@ int execTraceProcess(pid_t pid, uint64_t traced)
     return ret;
 }
 
-int execTraceCancel(pid_t pid)
+int execTraceCancel(pid_t pid, uint64_t detached)
 {
     int ret = -1;
     [trace_data_lock lock];
     trace_data_t* trace_data = (trace_data_t*)[[trace_data_record objectForKey:@(pid)] pointerValue];
     if(trace_data) {
-        [trace_data_record removeObjectForKey:@(pid)];
-        free((void*)trace_data);
-        trace_data = NULL;
-        ret = 0;
+        trace_data->cancelled = true;
+        trace_data->detached_flag_addr = detached;
+        ret = kill(pid, SIGTRAP);
     } else {
         JBLogError("no trace data for pid=%d", pid);
     }

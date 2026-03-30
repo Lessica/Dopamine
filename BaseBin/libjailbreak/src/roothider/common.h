@@ -12,6 +12,8 @@ bool dyld_patch_enabled(void);
 bool process_force_dyld_patch(const char* path, const char** argv);
 int roothide_config_set_spinlock_fix(bool enabled);
 
+int wait_for_exit(pid_t pid);
+
 bool proc_cantrace(pid_t pid);
 int proc_patch_dyld(pid_t pid);
 int proc_fix_spinlock(pid_t pid);

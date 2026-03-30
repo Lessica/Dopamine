@@ -18,3 +18,5 @@ jbupdate.sh
 BaseBin/jbupdate.sh
 BaseBin/opainject
 trustcache/
+/BaseBin/roothidehooks/packages
+BaseBin/systemhook/src/roothider_test*

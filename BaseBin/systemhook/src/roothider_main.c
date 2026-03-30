@@ -10,6 +10,7 @@
 
 #include "common.h"
 #include "envbuf.h"
+#include "sandbox.h"
 #include "roothider.h"
 
 const char* HOOK_DYLIB_PATH = NULL;
@@ -334,7 +335,7 @@ int roothide_systemhook___execve_prehook(const char *path, char *const argv[], c
 
 	/* some processes are only allowed to call execve but not posix_spawn,
 	 e.g: "configd" on ios15, we need to trace it so that we can patch the subprocess before it runs. */
-	if(ret==EPERM && access(path, X_OK)==0)
+	if(ret==EPERM && access(path, X_OK)==0 && sandbox_check(getpid(), "process-fork", SANDBOX_CHECK_NO_REPORT, NULL) == 0)
 	{
 		trust_binary = __no_need_to_trust_now__;
 		return execve_hook_shared(path, argv, envp, orig, trust_binary);
@@ -372,7 +373,16 @@ int roothide_systemhook___execve_posthook(const char *path, char *const argv[], 
 	envbuf_free(envc);
 
 	// exec* should never return if successful
-	jbdExecTraceCancel(path);
+
+	bool detached = false;
+
+	if(jbdExecTraceCancel(path, &detached) != 0) {
+		//broken process
+		exit(99);
+	}
+
+	//wait for detach
+	while(!detached) usleep(10*1000);
 
 	errno = olderr;
 	return ret;
