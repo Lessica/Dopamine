@@ -31,3 +31,28 @@ _MACHOMERGER_ORIG__ZNK5dyld413ProcessConfig9DyldCache17isOverridablePathEPKc:
     // FALLTHROUGH
 _MACHOMERGER_HOOKTRAMPOLINE__ZNK5dyld413ProcessConfig9DyldCache17isOverridablePathEPKc:
     b .
+
+.global _MACHOMERGER_ORIG__ZN5dyld413ProcessConfig9DyldCache23isAlwaysOverridablePathEPKc
+.global _MACHOMERGER_HOOKTRAMPOLINE__ZN5dyld413ProcessConfig9DyldCache23isAlwaysOverridablePathEPKc
+_MACHOMERGER_ORIG__ZN5dyld413ProcessConfig9DyldCache23isAlwaysOverridablePathEPKc:
+    nop // Will be replaced with the original first instruction by machomerger
+    // FALLTHROUGH
+_MACHOMERGER_HOOKTRAMPOLINE__ZN5dyld413ProcessConfig9DyldCache23isAlwaysOverridablePathEPKc:
+    b .
+
+// ---- applyCachePatches hook ----
+// Loader::applyCachePatches(RuntimeState&, DyldCacheDataConstLazyScopedWriter&) const
+.global _MACHOMERGER_ORIG__ZNK5dyld46Loader17applyCachePatchesERNS_12RuntimeStateERNS_34DyldCacheDataConstLazyScopedWriterE
+.global _MACHOMERGER_HOOKTRAMPOLINE__ZNK5dyld46Loader17applyCachePatchesERNS_12RuntimeStateERNS_34DyldCacheDataConstLazyScopedWriterE
+_MACHOMERGER_ORIG__ZNK5dyld46Loader17applyCachePatchesERNS_12RuntimeStateERNS_34DyldCacheDataConstLazyScopedWriterE:
+    nop
+    // FALLTHROUGH
+_MACHOMERGER_HOOKTRAMPOLINE__ZNK5dyld46Loader17applyCachePatchesERNS_12RuntimeStateERNS_34DyldCacheDataConstLazyScopedWriterE:
+    b .
+
+// ---- Trampolines to call dyld-internal functions ----
+// Loader::overridesDylibInCache(const DylibPatch*&, uint16_t&) const
+MAKE_TRAMPOLINE(_ZNK5dyld46Loader21overridesDylibInCacheERPKNS0_10DylibPatchERt)
+// Loader::loadAddress(RuntimeState&) const
+MAKE_TRAMPOLINE(_ZNK5dyld46Loader11loadAddressERNS_12RuntimeStateE)
+

@@ -20,3 +20,5 @@ BaseBin/opainject
 trustcache/
 /BaseBin/roothidehooks/packages
 BaseBin/systemhook/src/roothider_test*
+/third_party
+*.log
