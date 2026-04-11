@@ -6,6 +6,7 @@
 #include <limits.h>
 #include <mach/mach.h>
 #include <sys/mman.h>
+#include <mach-o/loader.h>
 
 #include "machomerger_hook.h"
 #include "dyld_jbinfo.h"
@@ -128,6 +129,40 @@ struct DylibPatch {
 // Saved during isOverridablePath hook — first field of ProcessConfig::DyldCache
 static const void *gDyldCacheAddr = NULL;
 
+// --- Dylib Mach-O segment helpers ---
+
+// Check whether a dylib-relative offset falls within an executable segment.
+// Parses the DSC dylib's own Mach-O header instead of cache-level mappings,
+// so this works correctly regardless of which sub-cache the dylib resides in.
+// Returns false for __DATA, __DATA_CONST, __AUTH etc. — those contain ObjC class
+// structs, CF objects, and other data that must NOT be overwritten with code.
+static bool is_executable_dylib_offset(const void *slidMachHeader,
+                                       uint64_t imageUnslidAddr,
+                                       uint32_t dylibOffset)
+{
+    const struct mach_header_64 *mh = (const struct mach_header_64 *)slidMachHeader;
+    if (mh->magic != MH_MAGIC_64)
+        return false;
+
+    const uint8_t *lc = (const uint8_t *)slidMachHeader + sizeof(struct mach_header_64);
+    for (uint32_t i = 0; i < mh->ncmds; i++) {
+        const struct load_command *cmd = (const struct load_command *)lc;
+        if (cmd->cmd == LC_SEGMENT_64) {
+            const struct segment_command_64 *seg = (const struct segment_command_64 *)lc;
+            if (seg->initprot & VM_PROT_EXECUTE) {
+                // Segment vmaddr is absolute (unslid) in DSC; convert to
+                // dylib-relative offset for comparison with dylibOffset.
+                uint64_t segRelStart = seg->vmaddr - imageUnslidAddr;
+                if (dylibOffset >= segRelStart &&
+                    dylibOffset <  segRelStart + seg->vmsize)
+                    return true;
+            }
+        }
+        lc += cmd->cmdsize;
+    }
+    return false;
+}
+
 // --- ARM64 trampoline encoding helpers ---
 
 static void write_adrp_add_br_trampoline(void *dsc_func, void *override_func)
@@ -249,6 +284,16 @@ void HOOK(_ZNK5dyld46Loader17applyCachePatchesERNS_12RuntimeStateERNS_34DyldCach
     const struct DylibPatch *patchEntry = patches;
 
     // 5. For each patchable export, write a trampoline at the DSC entry point
+    //    IMPORTANT: Only trampoline exports in __TEXT (executable) regions.
+    //    The patch table also includes ObjC classes, CF objects, and global
+    //    data in __DATA/__DATA_CONST — overwriting those with ARM64 instructions
+    //    would corrupt class metadata and crash in map_images_nolock.
+    //
+    //    We parse the dylib's own Mach-O segments (not cache-level mappings)
+    //    so this works correctly when the dylib is in a sub-cache.
+    uint64_t dscDylibUnslidBase = images[overriddenIndex].address;
+    const void *dscDylibMachHeader = (const void *)dscDylibBase;
+
     for (uint32_t i = 0; i < imgPatch->patchExportsCount; i++, patchEntry++) {
         int64_t overrideOff = patchEntry->overrideOffsetOfImpl;
 
@@ -262,6 +307,18 @@ void HOOK(_ZNK5dyld46Loader17applyCachePatchesERNS_12RuntimeStateERNS_34DyldCach
 
         const struct dsc_image_export_v2 *exp =
             &imageExports[imgPatch->patchExportsStartIndex + i];
+
+        // Skip data exports: ObjC classes (0x8), CF objects (0x1), or any
+        // non-regular kind.  Also verify by parsing the dylib's Mach-O
+        // segments that the offset resides in an executable segment.
+        uint32_t patchKind = exp->exportNameOffsetAndKind >> 28;
+        if (patchKind != 0)
+            continue;
+
+        if (!is_executable_dylib_offset(dscDylibMachHeader,
+                                        dscDylibUnslidBase,
+                                        exp->dylibOffsetOfImpl))
+            continue;
 
         uintptr_t dscFuncAddr      = (uintptr_t)(dscDylibBase + exp->dylibOffsetOfImpl);
         uintptr_t overrideFuncAddr = (uintptr_t)overrideBase + (uintptr_t)((intptr_t)overrideOff);
