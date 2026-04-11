@@ -319,6 +319,41 @@ bool HOOK(_ZN5dyld413ProcessConfig9DyldCache23isAlwaysOverridablePathEPKc)(const
     return true;
 }
 
+// ============================================================================
+// matchesPath hook — prevent double-loading of jbroot overrides
+//
+// Problem: DYLD_FRAMEWORK_PATH is set to /var/containers/.../Library/Frameworks
+// but dyld canonicalizes loaded paths via fcntl(F_GETPATH) to /private/var/...
+// When a late dlopen() generates the DYLD_FRAMEWORK_PATH variant, matchesPath()
+// compares "/var/..." against the stored "/private/var/..." → mismatch → dyld
+// creates a second Loader for the same file → ObjC sees duplicate classes → crash.
+//
+// Fix: normalize /var/ ↔ /private/var/ before the string comparison.
+// ============================================================================
+extern bool ORIG(_ZNK5dyld416JustInTimeLoader11matchesPathEPKc)(const void *self, const char *path);
+bool HOOK(_ZNK5dyld416JustInTimeLoader11matchesPathEPKc)(const void *self, const char *path)
+{
+    if (ORIG(_ZNK5dyld416JustInTimeLoader11matchesPathEPKc)(self, path))
+        return true;
+
+    // /var/... → try /private/var/...
+    if (path[0] == '/' && path[1] == 'v' && path[2] == 'a' && path[3] == 'r' && path[4] == '/') {
+        char buf[PATH_MAX];
+        strlcpy(buf, "/private", PATH_MAX);
+        strlcat(buf, path, PATH_MAX);
+        if (ORIG(_ZNK5dyld416JustInTimeLoader11matchesPathEPKc)(self, buf))
+            return true;
+    }
+
+    // /private/var/... → try /var/...
+    if (strncmp(path, "/private/var/", 13) == 0) {
+        if (ORIG(_ZNK5dyld416JustInTimeLoader11matchesPathEPKc)(self, path + 8))
+            return true;
+    }
+
+    return false;
+}
+
 bool SPINLOCK_FIX_DISABLED = false;
 
 void dyldhook_init_roothide(uintptr_t kernelParams)

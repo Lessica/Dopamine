@@ -11,8 +11,6 @@
 .text
 .align 4
 
-
-//MAKE_TRAMPOLINE(strncmp)
 MAKE_TRAMPOLINE(strlcpy)
 MAKE_TRAMPOLINE(strlcat)
 
@@ -55,4 +53,14 @@ _MACHOMERGER_HOOKTRAMPOLINE__ZNK5dyld46Loader17applyCachePatchesERNS_12RuntimeSt
 MAKE_TRAMPOLINE(_ZNK5dyld46Loader21overridesDylibInCacheERPKNS0_10DylibPatchERt)
 // Loader::loadAddress(RuntimeState&) const
 MAKE_TRAMPOLINE(_ZNK5dyld46Loader11loadAddressERNS_12RuntimeStateE)
+
+// ---- matchesPath hook ----
+// JustInTimeLoader::matchesPath(const char*) const
+.global _MACHOMERGER_ORIG__ZNK5dyld416JustInTimeLoader11matchesPathEPKc
+.global _MACHOMERGER_HOOKTRAMPOLINE__ZNK5dyld416JustInTimeLoader11matchesPathEPKc
+_MACHOMERGER_ORIG__ZNK5dyld416JustInTimeLoader11matchesPathEPKc:
+    nop
+    // FALLTHROUGH
+_MACHOMERGER_HOOKTRAMPOLINE__ZNK5dyld416JustInTimeLoader11matchesPathEPKc:
+    b .
 
