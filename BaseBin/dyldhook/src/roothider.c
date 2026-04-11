@@ -101,7 +101,14 @@ struct dsc_patch_info_v2 {
     uint64_t    patchTableArrayCount;
     uint64_t    patchImageExportsArrayAddr;
     uint64_t    patchImageExportsArrayCount;
-    // remaining fields are not needed for export iteration
+    uint64_t    patchClientsArrayAddr;
+    uint64_t    patchClientsArrayCount;
+    uint64_t    patchClientExportsArrayAddr;
+    uint64_t    patchClientExportsArrayCount;
+    uint64_t    patchLocationArrayAddr;
+    uint64_t    patchLocationArrayCount;
+    uint64_t    patchExportNamesAddr;           // blob of NUL-terminated export name strings
+    uint64_t    patchExportNamesSize;
 };
 
 struct dsc_image_patches_v2 {
@@ -248,26 +255,62 @@ void HOOK(_ZNK5dyld46Loader17applyCachePatchesERNS_12RuntimeStateERNS_34DyldCach
     const struct dsc_image_patches_v2 *imgPatch = &imagePatches[overriddenIndex];
     const struct DylibPatch *patchEntry = patches;
 
+    // Resolve export names string pool for diagnostics
+    const char *exportNames = NULL;
+    if (patchInfo->patchExportNamesAddr != 0 && patchInfo->patchExportNamesSize != 0)
+        exportNames = (const char *)((uintptr_t)patchInfo->patchExportNamesAddr + slide);
+
+    // Get the overridden DSC dylib's path for diagnostic output
+    const char *dscDylibPath = "<unknown>";
+    if (images[overriddenIndex].pathFileOffset != 0)
+        dscDylibPath = (const char *)((const uint8_t *)hdr + images[overriddenIndex].pathFileOffset);
+
     // 5. For each patchable export, write a trampoline at the DSC entry point
+    //    If the override is missing an export that DSC clients depend on, log
+    //    the symbol name and crash — the developer must provide a shim.
+    bool hasMissing = false;
     for (uint32_t i = 0; i < imgPatch->patchExportsCount; i++, patchEntry++) {
         int64_t overrideOff = patchEntry->overrideOffsetOfImpl;
 
         // Skip sentinel / special values
         if (overrideOff == DYLIBPATCH_END)
             break;
-        if (overrideOff == DYLIBPATCH_MISSING ||
-            overrideOff == DYLIBPATCH_OBJCCLASS ||
+        if (overrideOff == DYLIBPATCH_OBJCCLASS ||
             overrideOff == DYLIBPATCH_SINGLETON)
             continue;
 
         const struct dsc_image_export_v2 *exp =
             &imageExports[imgPatch->patchExportsStartIndex + i];
 
+        if (overrideOff == DYLIBPATCH_MISSING) {
+            // Report the missing symbol to stderr (visible in syslog/Console)
+            const char *symName = "<unknown>";
+            if (exportNames) {
+                uint32_t nameOff = exp->exportNameOffsetAndKind & 0x0FFFFFFFU;
+                if (nameOff < patchInfo->patchExportNamesSize)
+                    symName = &exportNames[nameOff];
+            }
+            // Format: "FATAL: override <dsc_dylib> missing symbol: <name>\n"
+            const char prefix[] = "FATAL: override ";
+            const char mid[]    = " missing symbol: ";
+            const char nl[]     = "\n";
+            write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
+            write(STDERR_FILENO, dscDylibPath, strlen(dscDylibPath));
+            write(STDERR_FILENO, mid, sizeof(mid) - 1);
+            write(STDERR_FILENO, symName, strlen(symName));
+            write(STDERR_FILENO, nl, 1);
+            hasMissing = true;
+            continue;
+        }
+
         uintptr_t dscFuncAddr      = (uintptr_t)(dscDylibBase + exp->dylibOffsetOfImpl);
         uintptr_t overrideFuncAddr = (uintptr_t)overrideBase + (uintptr_t)((intptr_t)overrideOff);
 
         write_adrp_add_br_trampoline((void *)dscFuncAddr, (void *)overrideFuncAddr);
     }
+
+    if (hasMissing)
+        __builtin_trap();
 }
 
 // class static method, no "this" parameter
