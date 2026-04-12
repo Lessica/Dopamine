@@ -116,6 +116,11 @@ static int spawn_exec_hook_common(const char *path,
 	}
 
 	const char *existingLibraryInserts = envbuf_getenv((const char **)envp, "DYLD_INSERT_LIBRARIES");
+	const char *existingDyldFrameworkPath = envbuf_getenv((const char **)envp, "DYLD_FRAMEWORK_PATH");
+	const char *existingXpcDyldFrameworkPath = envbuf_getenv((const char **)envp, "__XPC_DYLD_FRAMEWORK_PATH");
+	const char *existingDyldLibraryPath = envbuf_getenv((const char **)envp, "DYLD_LIBRARY_PATH");
+	const char *existingXpcDyldLibraryPath = envbuf_getenv((const char **)envp, "__XPC_DYLD_LIBRARY_PATH");
+
 	const char *jbFrameworkPath = JBROOT_PATH("/Library/Frameworks");
 	const char *jbLibraryPath = JBROOT_PATH("/usr/lib");
 
@@ -128,7 +133,10 @@ static int spawn_exec_hook_common(const char *path,
 		});
 	}
 
-	int JBEnvAlreadyInsertedCount = (int)systemHookAlreadyInserted;
+	bool dyldFrameworkPathAlreadySet = existingDyldFrameworkPath && !strcmp(existingDyldFrameworkPath, jbFrameworkPath);
+	bool xpcDyldFrameworkPathAlreadySet = existingXpcDyldFrameworkPath && !strcmp(existingXpcDyldFrameworkPath, jbFrameworkPath);
+	bool dyldLibraryPathAlreadySet = existingDyldLibraryPath && !strcmp(existingDyldLibraryPath, jbLibraryPath);
+	bool xpcDyldLibraryPathAlreadySet = existingXpcDyldLibraryPath && !strcmp(existingXpcDyldLibraryPath, jbLibraryPath);
 
 	// Check if we can find at least one reason to not insert jailbreak related environment variables
 	// In this case we also need to remove pre existing environment variables if they are already set
@@ -195,7 +203,8 @@ static int spawn_exec_hook_common(const char *path,
 
 	int r = -1;
 
-	if ((shouldInsertJBEnv && JBEnvAlreadyInsertedCount == 1) || (!shouldInsertJBEnv && JBEnvAlreadyInsertedCount == 0 && !hasSafeModeVariable)) {
+	if ((shouldInsertJBEnv && systemHookAlreadyInserted && dyldFrameworkPathAlreadySet && xpcDyldFrameworkPathAlreadySet && dyldLibraryPathAlreadySet && xpcDyldLibraryPathAlreadySet) ||
+		(!shouldInsertJBEnv && !systemHookAlreadyInserted && !existingDyldFrameworkPath && !existingXpcDyldFrameworkPath && !existingDyldLibraryPath && !existingXpcDyldLibraryPath && !hasSafeModeVariable)) {
 		// we're already good, just call orig
 		r = orig(envp);
 	}
@@ -213,20 +222,17 @@ static int spawn_exec_hook_common(const char *path,
 					strcat(newLibraryInsert, existingLibraryInserts);
 				}
 				envbuf_setenv(&envc, "DYLD_INSERT_LIBRARIES", newLibraryInsert);
-				envbuf_setenv(&envc, "DYLD_FRAMEWORK_PATH", jbFrameworkPath);
-				envbuf_setenv(&envc, "__XPC_DYLD_FRAMEWORK_PATH", jbFrameworkPath);
-				envbuf_setenv(&envc, "DYLD_LIBRARY_PATH", jbLibraryPath);
-				envbuf_setenv(&envc, "__XPC_DYLD_LIBRARY_PATH", jbLibraryPath);
 			}
+
+			envbuf_setenv(&envc, "DYLD_FRAMEWORK_PATH", jbFrameworkPath);
+			envbuf_setenv(&envc, "__XPC_DYLD_FRAMEWORK_PATH", jbFrameworkPath);
+			envbuf_setenv(&envc, "DYLD_LIBRARY_PATH", jbLibraryPath);
+			envbuf_setenv(&envc, "__XPC_DYLD_LIBRARY_PATH", jbLibraryPath);
 		}
 		else {
 			if (systemHookAlreadyInserted && existingLibraryInserts) {
 				if (!strcmp(existingLibraryInserts, HOOK_DYLIB_PATH)) {
 					envbuf_unsetenv(&envc, "DYLD_INSERT_LIBRARIES");
-					envbuf_unsetenv(&envc, "DYLD_FRAMEWORK_PATH");
-					envbuf_unsetenv(&envc, "__XPC_DYLD_FRAMEWORK_PATH");
-					envbuf_unsetenv(&envc, "DYLD_LIBRARY_PATH");
-					envbuf_unsetenv(&envc, "__XPC_DYLD_LIBRARY_PATH");
 				}
 				else {
 					char *newLibraryInsert = malloc(strlen(existingLibraryInserts)+1);
@@ -250,6 +256,11 @@ static int spawn_exec_hook_common(const char *path,
 					free(newLibraryInsert);
 				}
 			}
+
+			envbuf_unsetenv(&envc, "DYLD_FRAMEWORK_PATH");
+			envbuf_unsetenv(&envc, "__XPC_DYLD_FRAMEWORK_PATH");
+			envbuf_unsetenv(&envc, "DYLD_LIBRARY_PATH");
+			envbuf_unsetenv(&envc, "__XPC_DYLD_LIBRARY_PATH");
 			envbuf_unsetenv(&envc, "_SafeMode");
 			envbuf_unsetenv(&envc, "_MSSafeMode");
 		}

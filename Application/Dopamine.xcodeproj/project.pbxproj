@@ -2360,13 +2360,8 @@
 					"$(PROJECT_DIR)/Dopamine/Dependencies",
 					"$(PROJECT_DIR)/Dopamine/Resources",
 				);
-<<<<<<< HEAD
-				MARKETING_VERSION = 2.4.8;
-				PRODUCT_BUNDLE_IDENTIFIER = com.opa334.Dopamine-roothide;
-=======
 				MARKETING_VERSION = 2.4.9;
-				PRODUCT_BUNDLE_IDENTIFIER = com.opa334.Dopamine;
->>>>>>> 9dc2267 (Add DarkSword exploit)
+				PRODUCT_BUNDLE_IDENTIFIER = com.opa334.Dopamine-roothide;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
