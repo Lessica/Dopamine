@@ -13,6 +13,7 @@
 #include "private.h"
 #include <libjailbreak/jbclient_xpc.h>
 #include <libjailbreak/jbserver_domains.h>
+#include <libjailbreak/jbroot.h>
 
 bool string_has_prefix(const char *str, const char* prefix)
 {
@@ -115,6 +116,9 @@ static int spawn_exec_hook_common(const char *path,
 	}
 
 	const char *existingLibraryInserts = envbuf_getenv((const char **)envp, "DYLD_INSERT_LIBRARIES");
+	const char *jbFrameworkPath = JBROOT_PATH("/Library/Frameworks");
+	const char *jbLibraryPath = JBROOT_PATH("/usr/lib");
+
 	__block bool systemHookAlreadyInserted = false;
 	if (existingLibraryInserts) {
 		string_enumerate_components(existingLibraryInserts, ":", ^(const char *existingLibraryInsert, bool *stop) {
@@ -209,12 +213,20 @@ static int spawn_exec_hook_common(const char *path,
 					strcat(newLibraryInsert, existingLibraryInserts);
 				}
 				envbuf_setenv(&envc, "DYLD_INSERT_LIBRARIES", newLibraryInsert);
+				envbuf_setenv(&envc, "DYLD_FRAMEWORK_PATH", jbFrameworkPath);
+				envbuf_setenv(&envc, "__XPC_DYLD_FRAMEWORK_PATH", jbFrameworkPath);
+				envbuf_setenv(&envc, "DYLD_LIBRARY_PATH", jbLibraryPath);
+				envbuf_setenv(&envc, "__XPC_DYLD_LIBRARY_PATH", jbLibraryPath);
 			}
 		}
 		else {
 			if (systemHookAlreadyInserted && existingLibraryInserts) {
 				if (!strcmp(existingLibraryInserts, HOOK_DYLIB_PATH)) {
 					envbuf_unsetenv(&envc, "DYLD_INSERT_LIBRARIES");
+					envbuf_unsetenv(&envc, "DYLD_FRAMEWORK_PATH");
+					envbuf_unsetenv(&envc, "__XPC_DYLD_FRAMEWORK_PATH");
+					envbuf_unsetenv(&envc, "DYLD_LIBRARY_PATH");
+					envbuf_unsetenv(&envc, "__XPC_DYLD_LIBRARY_PATH");
 				}
 				else {
 					char *newLibraryInsert = malloc(strlen(existingLibraryInserts)+1);
